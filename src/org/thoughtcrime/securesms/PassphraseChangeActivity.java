@@ -16,21 +16,21 @@
  */
 package org.thoughtcrime.securesms;
 
-import android.os.AsyncTask;
 import android.content.Context;
-import android.util.Log;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.text.Editable;
+import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
-import android.widget.Toast;
 
 import org.thoughtcrime.securesms.crypto.InvalidPassphraseException;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.crypto.MasterSecretUtil;
+import org.thoughtcrime.securesms.util.DynamicLanguage;
+import org.thoughtcrime.securesms.util.DynamicTheme;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
 /**
@@ -41,15 +41,19 @@ import org.thoughtcrime.securesms.util.TextSecurePreferences;
 
 public class PassphraseChangeActivity extends PassphraseActivity {
 
+  private DynamicTheme    dynamicTheme    = new DynamicTheme();
+  private DynamicLanguage dynamicLanguage = new DynamicLanguage();
+
   private EditText originalPassphrase;
   private EditText newPassphrase;
   private EditText repeatPassphrase;
-  private TextView originalPassphraseLabel;
   private Button   okButton;
   private Button   cancelButton;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
+    dynamicTheme.onCreate(this);
+    dynamicLanguage.onCreate(this);
     super.onCreate(savedInstanceState);
 
     setContentView(R.layout.change_passphrase_activity);
@@ -57,8 +61,14 @@ public class PassphraseChangeActivity extends PassphraseActivity {
     initializeResources();
   }
 
+  @Override
+  public void onResume() {
+    super.onResume();
+    dynamicTheme.onResume(this);
+    dynamicLanguage.onResume(this);
+  }
+
   private void initializeResources() {
-    this.originalPassphraseLabel = (TextView) findViewById(R.id.old_passphrase_label);
     this.originalPassphrase      = (EditText) findViewById(R.id.old_passphrase      );
     this.newPassphrase           = (EditText) findViewById(R.id.new_passphrase      );
     this.repeatPassphrase        = (EditText) findViewById(R.id.repeat_passphrase   );
@@ -71,10 +81,8 @@ public class PassphraseChangeActivity extends PassphraseActivity {
 
     if (TextSecurePreferences.isPasswordDisabled(this)) {
       this.originalPassphrase.setVisibility(View.GONE);
-      this.originalPassphraseLabel.setVisibility(View.GONE);
     } else {
       this.originalPassphrase.setVisibility(View.VISIBLE);
-      this.originalPassphraseLabel.setVisibility(View.VISIBLE);
     }
   }
 
@@ -92,15 +100,13 @@ public class PassphraseChangeActivity extends PassphraseActivity {
     }
 
     if (!passphrase.equals(passphraseRepeat)) {
-      Toast.makeText(getApplicationContext(),
-                     R.string.PassphraseChangeActivity_passphrases_dont_match_exclamation,
-                     Toast.LENGTH_SHORT).show();
       this.newPassphrase.setText("");
       this.repeatPassphrase.setText("");
+      this.newPassphrase.setError(getString(R.string.PassphraseChangeActivity_passphrases_dont_match_exclamation));
+      this.newPassphrase.requestFocus();
     } else if (passphrase.equals("")) {
-      Toast.makeText(getApplicationContext(),
-                     R.string.PassphraseChangeActivity_enter_new_passphrase_exclamation,
-                     Toast.LENGTH_SHORT).show();
+      this.newPassphrase.setError(getString(R.string.PassphraseChangeActivity_enter_new_passphrase_exclamation));
+      this.newPassphrase.requestFocus();
     } else {
       new ChangePassphraseTask(this).execute(original, passphrase);
     }
@@ -151,9 +157,9 @@ public class PassphraseChangeActivity extends PassphraseActivity {
       if (masterSecret != null) {
         setMasterSecret(masterSecret);
       } else {
-        Toast.makeText(context, R.string.PassphraseChangeActivity_incorrect_old_passphrase_exclamation,
-                       Toast.LENGTH_LONG).show();
         originalPassphrase.setText("");
+        originalPassphrase.setError(getString(R.string.PassphraseChangeActivity_incorrect_old_passphrase_exclamation));
+        originalPassphrase.requestFocus();
       }
     }
   }

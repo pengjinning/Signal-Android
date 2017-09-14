@@ -3,7 +3,6 @@ package org.thoughtcrime.securesms.notifications;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -16,8 +15,11 @@ import android.support.v4.app.RemoteInput;
 import android.text.SpannableStringBuilder;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 
 import org.thoughtcrime.securesms.R;
+import org.thoughtcrime.securesms.contacts.avatars.ContactColors;
+import org.thoughtcrime.securesms.contacts.avatars.ContactPhotoFactory;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.mms.DecryptableStreamUriLoader;
 import org.thoughtcrime.securesms.mms.Slide;
@@ -25,6 +27,8 @@ import org.thoughtcrime.securesms.mms.SlideDeck;
 import org.thoughtcrime.securesms.preferences.NotificationPrivacyPreference;
 import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.util.BitmapUtil;
+import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.thoughtcrime.securesms.util.Util;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -48,12 +52,11 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
 
     setSmallIcon(R.drawable.icon_notification);
     setColor(context.getResources().getColor(R.color.textsecure_primary));
-    setPriority(NotificationCompat.PRIORITY_HIGH);
+    setPriority(TextSecurePreferences.getNotificationPriority(context));
     setCategory(NotificationCompat.CATEGORY_MESSAGE);
-    setDeleteIntent(PendingIntent.getBroadcast(context, 0, new Intent(MessageNotifier.DeleteReceiver.DELETE_REMINDER_ACTION), 0));
   }
 
-  public void setSender(@NonNull Recipient recipient) {
+  public void setThread(@NonNull Recipient recipient) {
     if (privacy.isDisplayContact()) {
       setContentTitle(recipient.toShortString());
 
@@ -65,12 +68,9 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
                             .asDrawable(context, recipient.getColor()
                                                           .toConversationColor(context)));
     } else {
-      setContentTitle(context.getString(R.string.SingleRecipientNotificationBuilder_new_signal_message));
-      setLargeIcon(Recipient.getUnknownRecipient()
-                            .getContactPhoto()
-                            .asDrawable(context, Recipient.getUnknownRecipient()
-                                                          .getColor()
-                                                          .toConversationColor(context)));
+      setContentTitle(context.getString(R.string.SingleRecipientNotificationBuilder_signal));
+      setLargeIcon(ContactPhotoFactory.getDefaultContactPhoto("Unknown")
+                                      .asDrawable(context, ContactColors.UNKNOWN_COLOR.toConversationColor(context)));
     }
   }
 
@@ -79,13 +79,44 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
     setNumber(messageCount);
   }
 
-  public void setPrimaryMessageBody(CharSequence message, @Nullable SlideDeck slideDeck) {
+  public void setPrimaryMessageBody(@NonNull  Recipient threadRecipients,
+                                    @NonNull  Recipient individualRecipient,
+                                    @NonNull  CharSequence message,
+                                    @Nullable SlideDeck slideDeck)
+  {
+    SpannableStringBuilder stringBuilder = new SpannableStringBuilder();
+
+    if (privacy.isDisplayContact() && threadRecipients.isGroupRecipient()) {
+      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString() + ": "));
+    }
+
     if (privacy.isDisplayMessage()) {
-      setContentText(message);
+      setContentText(stringBuilder.append(message));
       this.slideDeck = slideDeck;
     } else {
-      setContentText(context.getString(R.string.SingleRecipientNotificationBuilder_contents_hidden));
+      setContentText(stringBuilder.append(context.getString(R.string.SingleRecipientNotificationBuilder_new_message)));
     }
+  }
+
+  public void addAndroidAutoAction(@NonNull PendingIntent androidAutoReplyIntent,
+                                   @NonNull PendingIntent androidAutoHeardIntent, long timestamp)
+  {
+
+    if (mContentTitle == null || mContentText == null)
+      return;
+
+    RemoteInput remoteInput = new RemoteInput.Builder(AndroidAutoReplyReceiver.VOICE_REPLY_KEY)
+                                  .setLabel(context.getString(R.string.MessageNotifier_reply))
+                                  .build();
+
+    NotificationCompat.CarExtender.UnreadConversation.Builder unreadConversationBuilder =
+            new NotificationCompat.CarExtender.UnreadConversation.Builder(mContentTitle.toString())
+                .addMessage(mContentText.toString())
+                .setLatestTimestamp(timestamp)
+                .setReadPendingIntent(androidAutoHeardIntent)
+                .setReplyAction(androidAutoReplyIntent, remoteInput);
+
+    extend(new NotificationCompat.CarExtender().setUnreadConversation(unreadConversationBuilder.build()));
   }
 
   public void addActions(@Nullable MasterSecret masterSecret,
@@ -102,10 +133,19 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
                                       context.getString(R.string.MessageNotifier_reply),
                                       quickReplyIntent);
 
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        replyAction = new Action.Builder(R.drawable.ic_reply_white_36dp,
+                                         context.getString(R.string.MessageNotifier_reply),
+                                         wearableReplyIntent)
+            .addRemoteInput(new RemoteInput.Builder(MessageNotifier.EXTRA_REMOTE_REPLY)
+                                .setLabel(context.getString(R.string.MessageNotifier_reply)).build())
+            .build();
+      }
+
       Action wearableReplyAction = new Action.Builder(R.drawable.ic_reply,
                                                       context.getString(R.string.MessageNotifier_reply),
                                                       wearableReplyIntent)
-          .addRemoteInput(new RemoteInput.Builder(MessageNotifier.EXTRA_VOICE_REPLY)
+          .addRemoteInput(new RemoteInput.Builder(MessageNotifier.EXTRA_REMOTE_REPLY)
                               .setLabel(context.getString(R.string.MessageNotifier_reply)).build())
           .build();
 
@@ -121,19 +161,20 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
     }
   }
 
-  public void addMessageBody(@Nullable CharSequence messageBody) {
-    if (privacy.isDisplayMessage()) {
-      messageBodies.add(messageBody == null ? "" : messageBody);
-    }
-  }
+  public void addMessageBody(@NonNull Recipient threadRecipient,
+                             @NonNull Recipient individualRecipient,
+                             @Nullable CharSequence messageBody)
+  {
+    SpannableStringBuilder stringBuilder = new SpannableStringBuilder();
 
-  public void setTicker(@NonNull Recipient recipient, @Nullable CharSequence message) {
+    if (privacy.isDisplayContact() && threadRecipient.isGroupRecipient()) {
+      stringBuilder.append(Util.getBoldedString(individualRecipient.toShortString() + ": "));
+    }
+
     if (privacy.isDisplayMessage()) {
-      setTicker(getStyledMessage(recipient, message));
-    } else if (privacy.isDisplayContact()) {
-      setTicker(getStyledMessage(recipient, context.getString(R.string.SingleRecipientNotificationBuilder_new_signal_message)));
+      messageBodies.add(stringBuilder.append(messageBody == null ? "" : messageBody));
     } else {
-      setTicker(context.getString(R.string.SingleRecipientNotificationBuilder_new_signal_message));
+      messageBodies.add(stringBuilder.append(context.getString(R.string.SingleRecipientNotificationBuilder_new_message)));
     }
   }
 
@@ -187,6 +228,7 @@ public class SingleRecipientNotificationBuilder extends AbstractNotificationBuil
       return Glide.with(context)
                   .load(new DecryptableStreamUriLoader.DecryptableUri(masterSecret, uri))
                   .asBitmap()
+                  .diskCacheStrategy(DiskCacheStrategy.NONE)
                   .into(500, 500)
                   .get();
     } catch (InterruptedException | ExecutionException e) {

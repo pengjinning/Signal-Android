@@ -19,6 +19,8 @@ package org.thoughtcrime.securesms.util;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
@@ -35,12 +37,20 @@ import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.style.StyleSpan;
+import android.util.Log;
 import android.widget.EditText;
 
+import com.google.android.mms.pdu_alt.CharacterSets;
+import com.google.android.mms.pdu_alt.EncodedStringValue;
+import com.google.i18n.phonenumbers.NumberParseException;
+import com.google.i18n.phonenumbers.PhoneNumberUtil;
+import com.google.i18n.phonenumbers.Phonenumber;
+
 import org.thoughtcrime.securesms.BuildConfig;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.mms.OutgoingLegacyMmsConnection;
-import org.whispersystems.textsecure.api.util.InvalidNumberException;
-import org.whispersystems.textsecure.api.util.PhoneNumberFormatter;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.util.PhoneNumberFormatter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -49,7 +59,7 @@ import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.util.ArrayList;
+import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -60,11 +70,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import ws.com.google.android.mms.pdu.CharacterSets;
-import ws.com.google.android.mms.pdu.EncodedStringValue;
-
 public class Util {
+  private static final String TAG = Util.class.getSimpleName();
+
   public static Handler handler = new Handler(Looper.getMainLooper());
+
+  public static <T> List<T> asList(T... elements) {
+    List<T> result = new LinkedList<>();
+    Collections.addAll(result, elements);
+    return result;
+  }
 
   public static String join(String[] list, String delimiter) {
     return join(Arrays.asList(list), delimiter);
@@ -158,18 +173,40 @@ public class Util {
     }
   }
 
-  public static String canonicalizeNumber(Context context, String number)
-      throws InvalidNumberException
-  {
-    String localNumber = TextSecurePreferences.getLocalNumber(context);
-    return PhoneNumberFormatter.formatNumber(number, localNumber);
+  public static void close(InputStream in) {
+    try {
+      in.close();
+    } catch (IOException e) {
+      Log.w(TAG, e);
+    }
   }
 
-  public static String canonicalizeNumberOrGroup(@NonNull Context context, @NonNull String number)
-      throws InvalidNumberException
-  {
-    if (GroupUtil.isEncodedGroup(number)) return number;
-    else                                  return canonicalizeNumber(context, number);
+  public static void close(OutputStream out) {
+    try {
+      out.close();
+    } catch (IOException e) {
+      Log.w(TAG, e);
+    }
+  }
+
+  public static long getStreamLength(InputStream in) throws IOException {
+    byte[] buffer    = new byte[4096];
+    int    totalSize = 0;
+
+    int read;
+
+    while ((read = in.read(buffer)) != -1) {
+      totalSize += read;
+    }
+
+    return totalSize;
+  }
+
+  public static boolean isOwnNumber(Context context, Address address) {
+    if (address.isGroup()) return false;
+    if (address.isEmail()) return false;
+
+    return TextSecurePreferences.getLocalNumber(context).equals(address.toPhoneString());
   }
 
   public static byte[] readFully(InputStream in) throws IOException {
@@ -206,19 +243,24 @@ public class Util {
     return total;
   }
 
-  public static String getDeviceE164Number(Context context) {
-    String localNumber = ((TelephonyManager)context.getSystemService(Context.TELEPHONY_SERVICE))
-        .getLine1Number();
+  public static Optional<Phonenumber.PhoneNumber> getDeviceNumber(Context context) {
+    try {
+      final String           localNumber = ((TelephonyManager)context.getSystemService(Context.TELEPHONY_SERVICE)).getLine1Number();
+      final Optional<String> countryIso  = getSimCountryIso(context);
 
-    if (!TextUtils.isEmpty(localNumber) && !localNumber.startsWith("+"))
-    {
-      if (localNumber.length() == 10) localNumber = "+1" + localNumber;
-      else                            localNumber = "+"  + localNumber;
+      if (TextUtils.isEmpty(localNumber)) return Optional.absent();
+      if (!countryIso.isPresent())        return Optional.absent();
 
-      return localNumber;
+      return Optional.fromNullable(PhoneNumberUtil.getInstance().parse(localNumber, countryIso.get()));
+    } catch (NumberParseException e) {
+      Log.w(TAG, e);
+      return Optional.absent();
     }
+  }
 
-    return null;
+  public static Optional<String> getSimCountryIso(Context context) {
+    String simCountryIso = ((TelephonyManager)context.getSystemService(Context.TELEPHONY_SERVICE)).getSimCountryIso();
+    return Optional.fromNullable(simCountryIso != null ? simCountryIso.toUpperCase() : null);
   }
 
   public static <T> List<List<T>> partition(List<T> list, int partitionSize) {
@@ -312,8 +354,9 @@ public class Util {
     }
   }
 
-  public static boolean isBuildFresh() {
-    return BuildConfig.BUILD_TIMESTAMP + TimeUnit.DAYS.toMillis(90) > System.currentTimeMillis();
+  public static int getDaysTillBuildExpiry() {
+    int age = (int)TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - BuildConfig.BUILD_TIMESTAMP);
+    return 90 - age;
   }
 
   @TargetApi(VERSION_CODES.LOLLIPOP)
@@ -334,6 +377,10 @@ public class Util {
   public static void runOnMain(final @NonNull Runnable runnable) {
     if (isMainThread()) runnable.run();
     else                handler.post(runnable);
+  }
+
+  public static void runOnMainDelayed(final @NonNull Runnable runnable, long delayMillis) {
+    handler.postDelayed(runnable, delayMillis);
   }
 
   public static void runOnMainSync(final @NonNull Runnable runnable) {
@@ -358,6 +405,14 @@ public class Util {
     }
   }
 
+  public static <T> T getRandomElement(T[] elements) {
+    try {
+      return elements[SecureRandom.getInstance("SHA1PRNG").nextInt(elements.length)];
+    } catch (NoSuchAlgorithmException e) {
+      throw new AssertionError(e);
+    }
+  }
+
   public static boolean equals(@Nullable Object a, @Nullable Object b) {
     return a == b || (a != null && a.equals(b));
   }
@@ -371,7 +426,7 @@ public class Util {
     ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
 
     return (VERSION.SDK_INT >= VERSION_CODES.KITKAT && activityManager.isLowRamDevice()) ||
-           activityManager.getMemoryClass() <= 64;
+           activityManager.getLargeMemoryClass() <= 64;
   }
 
   public static int clamp(int value, int min, int max) {
@@ -380,5 +435,60 @@ public class Util {
 
   public static float clamp(float value, float min, float max) {
     return Math.min(Math.max(value, min), max);
+  }
+
+  public static @Nullable String readTextFromClipboard(@NonNull Context context) {
+    if (VERSION.SDK_INT >= 11) {
+      ClipboardManager clipboardManager = (ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+
+      if (clipboardManager.hasPrimaryClip() && clipboardManager.getPrimaryClip().getItemCount() > 0) {
+        return clipboardManager.getPrimaryClip().getItemAt(0).getText().toString();
+      } else {
+        return null;
+      }
+    } else {
+      android.text.ClipboardManager clipboardManager = (android.text.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+
+      if (clipboardManager.hasText()) {
+        return clipboardManager.getText().toString();
+      } else {
+        return null;
+      }
+    }
+  }
+
+  public static void writeTextToClipboard(@NonNull Context context, @NonNull String text) {
+    if (VERSION.SDK_INT >= 11) {
+      ClipboardManager clipboardManager = (ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+      clipboardManager.setPrimaryClip(ClipData.newPlainText("Safety numbers", text));
+    } else {
+      android.text.ClipboardManager clipboardManager = (android.text.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+      clipboardManager.setText(text);
+    }
+  }
+
+  public static int toIntExact(long value) {
+    if ((int)value != value) {
+      throw new ArithmeticException("integer overflow");
+    }
+    return (int)value;
+  }
+
+  public static boolean isStringEquals(String first, String second) {
+    if (first == null) return second == null;
+    return first.equals(second);
+  }
+
+  public static boolean isEquals(@Nullable Long first, long second) {
+    return first != null && first == second;
+  }
+
+  public static String getPrettyFileSize(long sizeBytes) {
+    if (sizeBytes <= 0) return "0";
+
+    String[] units       = new String[]{"B", "kB", "MB", "GB", "TB"};
+    int      digitGroups = (int) (Math.log10(sizeBytes) / Math.log10(1024));
+
+    return new DecimalFormat("#,##0.#").format(sizeBytes/Math.pow(1024, digitGroups)) + " " + units[digitGroups];
   }
 }

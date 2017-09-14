@@ -12,6 +12,7 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.WindowManager;
 
 import org.thoughtcrime.securesms.crypto.MasterSecret;
@@ -83,7 +84,7 @@ public class ConversationPopupActivity extends ConversationActivity {
           public void onSuccess(Long result) {
             ActivityOptionsCompat transition = ActivityOptionsCompat.makeScaleUpAnimation(getWindow().getDecorView(), 0, 0, getWindow().getAttributes().width, getWindow().getAttributes().height);
             Intent intent = new Intent(ConversationPopupActivity.this, ConversationActivity.class);
-            intent.putExtra(ConversationActivity.RECIPIENTS_EXTRA, getRecipients().getIds());
+            intent.putExtra(ConversationActivity.ADDRESS_EXTRA, getRecipient().getAddress());
             intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, result);
 
             if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
@@ -117,5 +118,12 @@ public class ConversationPopupActivity extends ConversationActivity {
   protected void sendComplete(long threadId) {
     super.sendComplete(threadId);
     finish();
+  }
+
+  @Override
+  protected void updateInviteReminder(boolean seenInvite) {
+    if (reminderView.resolved()) {
+      reminderView.get().setVisibility(View.GONE);
+    }
   }
 }

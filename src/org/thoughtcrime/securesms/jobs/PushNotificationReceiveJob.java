@@ -4,11 +4,12 @@ import android.content.Context;
 import android.util.Log;
 
 import org.thoughtcrime.securesms.dependencies.InjectableType;
+import org.thoughtcrime.securesms.notifications.MessageNotifier;
 import org.whispersystems.jobqueue.JobParameters;
 import org.whispersystems.jobqueue.requirements.NetworkRequirement;
-import org.whispersystems.textsecure.api.TextSecureMessageReceiver;
-import org.whispersystems.textsecure.api.messages.TextSecureEnvelope;
-import org.whispersystems.textsecure.api.push.exceptions.PushNetworkException;
+import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
+import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.push.exceptions.PushNetworkException;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -19,7 +20,7 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
 
   private static final String TAG = PushNotificationReceiveJob.class.getSimpleName();
 
-  @Inject transient TextSecureMessageReceiver receiver;
+  @Inject transient SignalServiceMessageReceiver receiver;
 
   public PushNotificationReceiveJob(Context context) {
     super(context, JobParameters.newBuilder()
@@ -33,9 +34,9 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
 
   @Override
   public void onRun() throws IOException {
-    receiver.retrieveMessages(new TextSecureMessageReceiver.MessageReceivedCallback() {
+    receiver.retrieveMessages(new SignalServiceMessageReceiver.MessageReceivedCallback() {
       @Override
-      public void onMessage(TextSecureEnvelope envelope) {
+      public void onMessage(SignalServiceEnvelope envelope) {
         handle(envelope, false);
       }
     });
@@ -50,5 +51,6 @@ public class PushNotificationReceiveJob extends PushReceivedJob implements Injec
   @Override
   public void onCanceled() {
     Log.w(TAG, "***** Failed to download pending message!");
+//    MessageNotifier.notifyMessagesPending(getContext());
   }
 }

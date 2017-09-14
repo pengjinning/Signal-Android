@@ -7,7 +7,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.thoughtcrime.securesms.util.DateUtils;
-import org.whispersystems.textsecure.api.messages.multidevice.DeviceInfo;
+import org.whispersystems.signalservice.api.messages.multidevice.DeviceInfo;
 
 import java.util.Locale;
 
@@ -34,19 +34,19 @@ public class DeviceListItem extends LinearLayout {
     this.lastActive = (TextView) findViewById(R.id.active);
   }
 
-  public void set(DeviceInfo deviceInfo) {
+  public void set(DeviceInfo deviceInfo, Locale locale) {
     if (TextUtils.isEmpty(deviceInfo.getName())) this.name.setText(R.string.DeviceListItem_unnamed_device);
     else                                         this.name.setText(deviceInfo.getName());
 
     this.created.setText(getContext().getString(R.string.DeviceListItem_linked_s,
-                                                DateUtils.getExtendedRelativeTimeSpanString(getContext(),
-                                                                                            Locale.getDefault(),
-                                                                                            deviceInfo.getCreated())));
+                                                DateUtils.getDayPrecisionTimeSpanString(getContext(),
+                                                                                        locale,
+                                                                                        deviceInfo.getCreated())));
 
     this.lastActive.setText(getContext().getString(R.string.DeviceListItem_last_active_s,
-                                                   DateUtils.getExtendedRelativeTimeSpanString(getContext(),
-                                                                                               Locale.getDefault(),
-                                                                                               deviceInfo.getLastSeen())));
+                                                   DateUtils.getDayPrecisionTimeSpanString(getContext(),
+                                                                                           locale,
+                                                                                           deviceInfo.getLastSeen())));
 
     this.deviceId = deviceInfo.getId();
   }

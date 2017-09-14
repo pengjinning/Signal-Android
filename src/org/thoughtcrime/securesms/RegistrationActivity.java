@@ -3,26 +3,27 @@ package org.thoughtcrime.securesms;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.net.Uri;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.graphics.PorterDuff;
 import android.os.Bundle;
-import android.telephony.TelephonyManager;
+import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AlertDialog;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.afollestad.materialdialogs.AlertDialogWrapper;
 import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.i18n.phonenumbers.AsYouTypeFormatter;
-import com.google.i18n.phonenumbers.NumberParseException;
 import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.google.i18n.phonenumbers.Phonenumber;
 
@@ -30,7 +31,8 @@ import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.util.Dialogs;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.thoughtcrime.securesms.util.Util;
-import org.whispersystems.textsecure.api.util.PhoneNumberFormatter;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.util.PhoneNumberFormatter;
 
 /**
  * The register account activity.  Prompts ths user for their registration information
@@ -42,14 +44,25 @@ import org.whispersystems.textsecure.api.util.PhoneNumberFormatter;
 public class RegistrationActivity extends BaseActionBarActivity {
 
   private static final int PICK_COUNTRY = 1;
+  private static final String TAG = RegistrationActivity.class.getSimpleName();
+
+  private enum PlayServicesStatus {
+    SUCCESS,
+    MISSING,
+    NEEDS_UPDATE,
+    TRANSIENT_ERROR
+  }
 
   private AsYouTypeFormatter   countryFormatter;
   private ArrayAdapter<String> countrySpinnerAdapter;
   private Spinner              countrySpinner;
   private TextView             countryCode;
   private TextView             number;
-  private Button               createButton;
-  private Button               skipButton;
+  private TextView             createButton;
+  private TextView             skipButton;
+  private TextView             informationView;
+  private View                 informationToggle;
+  private TextView             informationToggleText;
 
   private MasterSecret masterSecret;
 
@@ -76,33 +89,31 @@ public class RegistrationActivity extends BaseActionBarActivity {
 
   private void initializeResources() {
     this.masterSecret   = getIntent().getParcelableExtra("master_secret");
-    this.countrySpinner = (Spinner)findViewById(R.id.country_spinner);
-    this.countryCode    = (TextView)findViewById(R.id.country_code);
-    this.number         = (TextView)findViewById(R.id.number);
-    this.createButton   = (Button)findViewById(R.id.registerButton);
-    this.skipButton     = (Button)findViewById(R.id.skipButton);
+    this.countrySpinner        = (Spinner) findViewById(R.id.country_spinner);
+    this.countryCode           = (TextView) findViewById(R.id.country_code);
+    this.number                = (TextView) findViewById(R.id.number);
+    this.createButton          = (TextView) findViewById(R.id.registerButton);
+    this.skipButton            = (TextView) findViewById(R.id.skipButton);
+    this.informationView       = (TextView) findViewById(R.id.registration_information);
+    this.informationToggle     =            findViewById(R.id.information_link_container);
+    this.informationToggleText = (TextView) findViewById(R.id.information_label);
+
+    this.createButton.getBackground().setColorFilter(ContextCompat.getColor(this, R.color.signal_primary),
+                                                     PorterDuff.Mode.MULTIPLY);
+    this.skipButton.getBackground().setColorFilter(ContextCompat.getColor(this, R.color.grey_400),
+                                                   PorterDuff.Mode.MULTIPLY);
 
     this.countryCode.addTextChangedListener(new CountryCodeChangedListener());
     this.number.addTextChangedListener(new NumberChangedListener());
     this.createButton.setOnClickListener(new CreateButtonListener());
     this.skipButton.setOnClickListener(new CancelButtonListener());
+    this.informationToggle.setOnClickListener(new InformationToggleListener());
 
     if (getIntent().getBooleanExtra("cancel_button", false)) {
       this.skipButton.setVisibility(View.VISIBLE);
     } else {
       this.skipButton.setVisibility(View.INVISIBLE);
     }
-
-    findViewById(R.id.twilio_shoutout).setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        Intent intent = new Intent();
-        intent.setAction(Intent.ACTION_VIEW);
-        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        intent.setData(Uri.parse("https://twilio.com"));
-        startActivity(intent);
-      }
-    });
   }
 
   private void initializeSpinner() {
@@ -122,29 +133,31 @@ public class RegistrationActivity extends BaseActionBarActivity {
         return true;
       }
     });
+    this.countrySpinner.setOnKeyListener(new View.OnKeyListener() {
+      @Override
+      public boolean onKey(View v, int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER && event.getAction() == KeyEvent.ACTION_UP) {
+          Intent intent = new Intent(RegistrationActivity.this, CountrySelectionActivity.class);
+          startActivityForResult(intent, PICK_COUNTRY);
+          return true;
+        }
+        return false;
+      }
+    });
   }
 
   private void initializeNumber() {
-    PhoneNumberUtil numberUtil  = PhoneNumberUtil.getInstance();
-    String          localNumber = Util.getDeviceE164Number(this);
+    Optional<Phonenumber.PhoneNumber> localNumber = Util.getDeviceNumber(this);
 
-    try {
-      if (!TextUtils.isEmpty(localNumber)) {
-        Phonenumber.PhoneNumber localNumberObject = numberUtil.parse(localNumber, null);
+    if (localNumber.isPresent()) {
+      this.countryCode.setText(String.valueOf(localNumber.get().getCountryCode()));
+      this.number.setText(String.valueOf(localNumber.get().getNationalNumber()));
+    } else {
+      Optional<String> simCountryIso = Util.getSimCountryIso(this);
 
-        if (localNumberObject != null) {
-          this.countryCode.setText(localNumberObject.getCountryCode()+"");
-          this.number.setText(localNumberObject.getNationalNumber()+"");
-        }
-      } else {
-        String simCountryIso = ((TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE)).getSimCountryIso();
-
-        if (!TextUtils.isEmpty(simCountryIso)) {
-          this.countryCode.setText(numberUtil.getCountryCodeForRegion(simCountryIso.toUpperCase())+"");
-        }
+      if (simCountryIso.isPresent() && !TextUtils.isEmpty(simCountryIso.get())) {
+        this.countryCode.setText(PhoneNumberUtil.getInstance().getCountryCodeForRegion(simCountryIso.get())+"");
       }
-    } catch (NumberParseException npe) {
-      Log.w("CreateAccountActivity", npe);
     }
   }
 
@@ -195,28 +208,32 @@ public class RegistrationActivity extends BaseActionBarActivity {
         return;
       }
 
-      int gcmStatus = GooglePlayServicesUtil.isGooglePlayServicesAvailable(self);
+      PlayServicesStatus gcmStatus = checkPlayServices(self);
 
-      if (gcmStatus != ConnectionResult.SUCCESS) {
-        if (GooglePlayServicesUtil.isUserRecoverableError(gcmStatus)) {
-          GooglePlayServicesUtil.getErrorDialog(gcmStatus, self, 9000).show();
-        } else {
-          Dialogs.showAlertDialog(self, getString(R.string.RegistrationActivity_unsupported),
-                                  getString(R.string.RegistrationActivity_sorry_this_device_is_not_supported_for_data_messaging));
-        }
-        return;
+      if (gcmStatus == PlayServicesStatus.SUCCESS) {
+        promptForRegistrationStart(self, e164number, true);
+      } else if (gcmStatus == PlayServicesStatus.MISSING) {
+        promptForNoPlayServices(self, e164number);
+      } else if (gcmStatus == PlayServicesStatus.NEEDS_UPDATE) {
+        GoogleApiAvailability.getInstance().getErrorDialog(self, ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED, 0).show();
+      } else {
+        Dialogs.showAlertDialog(self, getString(R.string.RegistrationActivity_play_services_error),
+                                getString(R.string.RegistrationActivity_google_play_services_is_updating_or_unavailable));
       }
+    }
 
-      AlertDialogWrapper.Builder dialog = new AlertDialogWrapper.Builder(self);
+    private void promptForRegistrationStart(final Context context, final String e164number, final boolean gcmSupported) {
+      AlertDialog.Builder dialog = new AlertDialog.Builder(context);
       dialog.setTitle(PhoneNumberFormatter.getInternationalFormatFromE164(e164number));
       dialog.setMessage(R.string.RegistrationActivity_we_will_now_verify_that_the_following_number_is_associated_with_your_device_s);
       dialog.setPositiveButton(getString(R.string.RegistrationActivity_continue),
                                new DialogInterface.OnClickListener() {
                                  @Override
                                  public void onClick(DialogInterface dialog, int which) {
-                                   Intent intent = new Intent(self, RegistrationProgressActivity.class);
-                                   intent.putExtra("e164number", e164number);
-                                   intent.putExtra("master_secret", masterSecret);
+                                   Intent intent = new Intent(context, RegistrationProgressActivity.class);
+                                   intent.putExtra(RegistrationProgressActivity.NUMBER_EXTRA, e164number);
+                                   intent.putExtra(RegistrationProgressActivity.MASTER_SECRET_EXTRA, masterSecret);
+                                   intent.putExtra(RegistrationProgressActivity.GCM_SUPPORTED_EXTRA, gcmSupported);
                                    startActivity(intent);
                                    finish();
                                  }
@@ -224,12 +241,64 @@ public class RegistrationActivity extends BaseActionBarActivity {
       dialog.setNegativeButton(getString(R.string.RegistrationActivity_edit), null);
       dialog.show();
     }
+
+    private void promptForNoPlayServices(final Context context, final String e164number) {
+      AlertDialog.Builder dialog = new AlertDialog.Builder(context);
+      dialog.setTitle(R.string.RegistrationActivity_missing_google_play_services);
+      dialog.setMessage(R.string.RegistrationActivity_this_device_is_missing_google_play_services);
+      dialog.setPositiveButton(R.string.RegistrationActivity_i_understand, new DialogInterface.OnClickListener() {
+        @Override
+        public void onClick(DialogInterface dialog, int which) {
+          promptForRegistrationStart(context, e164number, false);
+        }
+      });
+      dialog.setNegativeButton(android.R.string.cancel, null);
+      dialog.show();
+    }
+
+    private PlayServicesStatus checkPlayServices(Context context) {
+      int gcmStatus = 0;
+
+      try {
+        gcmStatus = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context);
+      } catch (Throwable t) {
+        Log.w(TAG, t);
+        return PlayServicesStatus.MISSING;
+      }
+
+      Log.w(TAG, "Play Services: " + gcmStatus);
+
+      switch (gcmStatus) {
+        case ConnectionResult.SUCCESS:
+          return PlayServicesStatus.SUCCESS;
+        case ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED:
+          try {
+            ApplicationInfo applicationInfo = getPackageManager().getApplicationInfo("com.google.android.gms", 0);
+
+            if (applicationInfo != null && !applicationInfo.enabled) {
+              return PlayServicesStatus.MISSING;
+            }
+          } catch (PackageManager.NameNotFoundException e) {
+            Log.w(TAG, e);
+          }
+
+          return PlayServicesStatus.NEEDS_UPDATE;
+        case ConnectionResult.SERVICE_DISABLED:
+        case ConnectionResult.SERVICE_MISSING:
+        case ConnectionResult.SERVICE_INVALID:
+        case ConnectionResult.API_UNAVAILABLE:
+        case ConnectionResult.SERVICE_MISSING_PERMISSION:
+          return PlayServicesStatus.MISSING;
+        default:
+          return PlayServicesStatus.TRANSIENT_ERROR;
+      }
+    }
   }
 
   private class CountryCodeChangedListener implements TextWatcher {
     @Override
     public void afterTextChanged(Editable s) {
-      if (TextUtils.isEmpty(s)) {
+      if (TextUtils.isEmpty(s) || !TextUtils.isDigitsOnly(s)) {
         setCountryDisplay(getString(R.string.RegistrationActivity_select_your_country));
         countryFormatter = null;
         return;
@@ -301,6 +370,19 @@ public class RegistrationActivity extends BaseActionBarActivity {
 
       startActivity(nextIntent);
       finish();
+    }
+  }
+
+  private class InformationToggleListener implements View.OnClickListener {
+    @Override
+    public void onClick(View v) {
+      if (informationView.getVisibility() == View.VISIBLE) {
+        informationView.setVisibility(View.GONE);
+        informationToggleText.setText(R.string.RegistrationActivity_more_information);
+      } else {
+        informationView.setVisibility(View.VISIBLE);
+        informationToggleText.setText(R.string.RegistrationActivity_less_information);
+      }
     }
   }
 }

@@ -24,10 +24,7 @@ import android.support.annotation.NonNull;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.attachments.Attachment;
-
-import java.io.IOException;
-
-import ws.com.google.android.mms.ContentType;
+import org.thoughtcrime.securesms.util.MediaUtil;
 
 public class ImageSlide extends Slide {
 
@@ -37,8 +34,8 @@ public class ImageSlide extends Slide {
     super(context, attachment);
   }
 
-  public ImageSlide(Context context, Uri uri, long size) throws IOException {
-    super(context, constructAttachmentFromUri(context, uri, ContentType.IMAGE_JPEG, size));
+  public ImageSlide(Context context, Uri uri, long size) {
+    super(context, constructAttachmentFromUri(context, uri, MediaUtil.IMAGE_JPEG, size, true, null, false));
   }
 
   @Override
@@ -51,7 +48,9 @@ public class ImageSlide extends Slide {
     return true;
   }
 
-  @NonNull @Override public String getContentDescription() {
+  @NonNull
+  @Override
+  public String getContentDescription() {
     return context.getString(R.string.Slide_image);
   }
 }

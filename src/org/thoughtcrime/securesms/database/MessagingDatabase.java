@@ -12,12 +12,11 @@ import org.thoughtcrime.securesms.database.documents.Document;
 import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatch;
 import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatchList;
 import org.thoughtcrime.securesms.util.JsonUtils;
-import org.whispersystems.libaxolotl.IdentityKey;
+import org.whispersystems.libsignal.IdentityKey;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 
 public abstract class MessagingDatabase extends Database implements MmsSmsColumns {
@@ -30,9 +29,9 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
 
   protected abstract String getTableName();
 
-  public void setMismatchedIdentity(long messageId, final long recipientId, final IdentityKey identityKey) {
+  public void setMismatchedIdentity(long messageId, final Address address, final IdentityKey identityKey) {
     List<IdentityKeyMismatch> items = new ArrayList<IdentityKeyMismatch>() {{
-      add(new IdentityKeyMismatch(recipientId, identityKey));
+      add(new IdentityKeyMismatch(address, identityKey));
     }};
 
     IdentityKeyMismatchList document = new IdentityKeyMismatchList(items);
@@ -51,20 +50,20 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
     }
   }
 
-  public void addMismatchedIdentity(long messageId, long recipientId, IdentityKey identityKey) {
+  public void addMismatchedIdentity(long messageId, Address address, IdentityKey identityKey) {
     try {
       addToDocument(messageId, MISMATCHED_IDENTITIES,
-                    new IdentityKeyMismatch(recipientId, identityKey),
+                    new IdentityKeyMismatch(address, identityKey),
                     IdentityKeyMismatchList.class);
     } catch (IOException e) {
       Log.w(TAG, e);
     }
   }
 
-  public void removeMismatchedIdentity(long messageId, long recipientId, IdentityKey identityKey) {
+  public void removeMismatchedIdentity(long messageId, Address address, IdentityKey identityKey) {
     try {
       removeFromDocument(messageId, MISMATCHED_IDENTITIES,
-                         new IdentityKeyMismatch(recipientId, identityKey),
+                         new IdentityKeyMismatch(address, identityKey),
                          IdentityKeyMismatchList.class);
     } catch (IOException e) {
       Log.w(TAG, e);
@@ -163,6 +162,93 @@ public abstract class MessagingDatabase extends Database implements MmsSmsColumn
     } finally {
       if (cursor != null)
         cursor.close();
+    }
+  }
+
+  public static class SyncMessageId {
+
+    private final Address address;
+    private final long   timetamp;
+
+    public SyncMessageId(Address address, long timetamp) {
+      this.address  = address;
+      this.timetamp = timetamp;
+    }
+
+    public Address getAddress() {
+      return address;
+    }
+
+    public long getTimetamp() {
+      return timetamp;
+    }
+  }
+
+  public static class ExpirationInfo {
+
+    private final long    id;
+    private final long    expiresIn;
+    private final long    expireStarted;
+    private final boolean mms;
+
+    public ExpirationInfo(long id, long expiresIn, long expireStarted, boolean mms) {
+      this.id            = id;
+      this.expiresIn     = expiresIn;
+      this.expireStarted = expireStarted;
+      this.mms           = mms;
+    }
+
+    public long getId() {
+      return id;
+    }
+
+    public long getExpiresIn() {
+      return expiresIn;
+    }
+
+    public long getExpireStarted() {
+      return expireStarted;
+    }
+
+    public boolean isMms() {
+      return mms;
+    }
+  }
+
+  public static class MarkedMessageInfo {
+
+    private final SyncMessageId  syncMessageId;
+    private final ExpirationInfo expirationInfo;
+
+    public MarkedMessageInfo(SyncMessageId syncMessageId, ExpirationInfo expirationInfo) {
+      this.syncMessageId  = syncMessageId;
+      this.expirationInfo = expirationInfo;
+    }
+
+    public SyncMessageId getSyncMessageId() {
+      return syncMessageId;
+    }
+
+    public ExpirationInfo getExpirationInfo() {
+      return expirationInfo;
+    }
+  }
+
+  public static class InsertResult {
+    private final long messageId;
+    private final long threadId;
+
+    public InsertResult(long messageId, long threadId) {
+      this.messageId = messageId;
+      this.threadId = threadId;
+    }
+
+    public long getMessageId() {
+      return messageId;
+    }
+
+    public long getThreadId() {
+      return threadId;
     }
   }
 }

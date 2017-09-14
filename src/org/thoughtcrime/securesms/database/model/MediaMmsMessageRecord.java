@@ -22,11 +22,11 @@ import android.text.SpannableString;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.database.MmsDatabase;
+import org.thoughtcrime.securesms.database.SmsDatabase.Status;
 import org.thoughtcrime.securesms.database.documents.IdentityKeyMismatch;
 import org.thoughtcrime.securesms.database.documents.NetworkFailure;
 import org.thoughtcrime.securesms.mms.SlideDeck;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.Recipients;
 
 import java.util.List;
 
@@ -38,46 +38,32 @@ import java.util.List;
  *
  */
 
-public class MediaMmsMessageRecord extends MessageRecord {
+public class MediaMmsMessageRecord extends MmsMessageRecord {
   private final static String TAG = MediaMmsMessageRecord.class.getSimpleName();
 
   private final Context context;
-  private final int partCount;
-  private final @NonNull SlideDeck slideDeck;
+  private final int     partCount;
 
-  public MediaMmsMessageRecord(Context context, long id, Recipients recipients,
+  public MediaMmsMessageRecord(Context context, long id, Recipient conversationRecipient,
                                Recipient individualRecipient, int recipientDeviceId,
-                               long dateSent, long dateReceived, int deliveredCount,
+                               long dateSent, long dateReceived, int receiptCount,
                                long threadId, Body body,
                                @NonNull SlideDeck slideDeck,
                                int partCount, long mailbox,
                                List<IdentityKeyMismatch> mismatches,
-                               List<NetworkFailure> failures)
+                               List<NetworkFailure> failures, int subscriptionId,
+                               long expiresIn, long expireStarted)
   {
-    super(context, id, body, recipients, individualRecipient, recipientDeviceId,
-          dateSent, dateReceived, threadId, DELIVERY_STATUS_NONE, deliveredCount, mailbox,
-          mismatches, failures);
+    super(context, id, body, conversationRecipient, individualRecipient, recipientDeviceId, dateSent,
+          dateReceived, threadId, Status.STATUS_NONE, receiptCount, mailbox, mismatches, failures,
+          subscriptionId, expiresIn, expireStarted, slideDeck);
 
     this.context   = context.getApplicationContext();
     this.partCount = partCount;
-    this.slideDeck = slideDeck;
-  }
-
-  public @NonNull SlideDeck getSlideDeck() {
-    return slideDeck;
-  }
-
-  public boolean containsMediaSlide() {
-    return slideDeck.containsMediaSlide();
   }
 
   public int getPartCount() {
     return partCount;
-  }
-
-  @Override
-  public boolean isMms() {
-    return true;
   }
 
   @Override

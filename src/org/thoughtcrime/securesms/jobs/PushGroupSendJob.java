@@ -1,35 +1,41 @@
 package org.thoughtcrime.securesms.jobs;
 
 import android.content.Context;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
+import org.thoughtcrime.securesms.ApplicationContext;
+import org.thoughtcrime.securesms.attachments.Attachment;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.MmsDatabase;
 import org.thoughtcrime.securesms.database.NoSuchMessageException;
 import org.thoughtcrime.securesms.database.documents.NetworkFailure;
 import org.thoughtcrime.securesms.dependencies.InjectableType;
 import org.thoughtcrime.securesms.jobs.requirements.MasterSecretRequirement;
+import org.thoughtcrime.securesms.mms.MediaConstraints;
+import org.thoughtcrime.securesms.mms.MmsException;
 import org.thoughtcrime.securesms.mms.OutgoingGroupMediaMessage;
 import org.thoughtcrime.securesms.mms.OutgoingMediaMessage;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.RecipientFactory;
 import org.thoughtcrime.securesms.recipients.RecipientFormattingException;
-import org.thoughtcrime.securesms.recipients.Recipients;
 import org.thoughtcrime.securesms.transport.UndeliverableMessageException;
 import org.thoughtcrime.securesms.util.GroupUtil;
 import org.whispersystems.jobqueue.JobParameters;
 import org.whispersystems.jobqueue.requirements.NetworkRequirement;
-import org.whispersystems.textsecure.api.TextSecureMessageSender;
-import org.whispersystems.textsecure.api.crypto.UntrustedIdentityException;
-import org.whispersystems.textsecure.api.messages.TextSecureAttachment;
-import org.whispersystems.textsecure.api.messages.TextSecureDataMessage;
-import org.whispersystems.textsecure.api.messages.TextSecureGroup;
-import org.whispersystems.textsecure.api.push.TextSecureAddress;
-import org.whispersystems.textsecure.api.push.exceptions.EncapsulatedExceptions;
-import org.whispersystems.textsecure.api.push.exceptions.NetworkFailureException;
-import org.whispersystems.textsecure.api.util.InvalidNumberException;
-import org.whispersystems.textsecure.internal.push.TextSecureProtos.GroupContext;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.SignalServiceMessageSender;
+import org.whispersystems.signalservice.api.crypto.UntrustedIdentityException;
+import org.whispersystems.signalservice.api.messages.SignalServiceAttachment;
+import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroup;
+import org.whispersystems.signalservice.api.push.SignalServiceAddress;
+import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
+import org.whispersystems.signalservice.api.push.exceptions.NetworkFailureException;
+import org.whispersystems.signalservice.api.util.InvalidNumberException;
+import org.whispersystems.signalservice.internal.push.SignalServiceProtos.GroupContext;
 
 import java.io.IOException;
 import java.util.LinkedList;
@@ -37,9 +43,7 @@ import java.util.List;
 
 import javax.inject.Inject;
 
-import ws.com.google.android.mms.MmsException;
-
-import static org.thoughtcrime.securesms.dependencies.TextSecureCommunicationModule.TextSecureMessageSenderFactory;
+import static org.thoughtcrime.securesms.dependencies.SignalCommunicationModule.SignalMessageSenderFactory;
 
 public class PushGroupSendJob extends PushSendJob implements InjectableType {
 
@@ -47,44 +51,49 @@ public class PushGroupSendJob extends PushSendJob implements InjectableType {
 
   private static final String TAG = PushGroupSendJob.class.getSimpleName();
 
-  @Inject transient TextSecureMessageSenderFactory messageSenderFactory;
+  @Inject transient SignalMessageSenderFactory messageSenderFactory;
 
-  private final long messageId;
-  private final long filterRecipientId;
+  private final long   messageId;
+  private final long   filterRecipientId; // Deprecated
+  private final String filterAddress;
 
-  public PushGroupSendJob(Context context, long messageId, String destination, long filterRecipientId) {
+  public PushGroupSendJob(Context context, long messageId, @NonNull Address destination, @Nullable Address filterAddress) {
     super(context, JobParameters.newBuilder()
                                 .withPersistence()
-                                .withGroupId(destination)
+                                .withGroupId(destination.toGroupString())
                                 .withRequirement(new MasterSecretRequirement(context))
                                 .withRequirement(new NetworkRequirement(context))
                                 .withRetryCount(5)
                                 .create());
 
     this.messageId         = messageId;
-    this.filterRecipientId = filterRecipientId;
+    this.filterAddress     = filterAddress == null ? null :filterAddress.toPhoneString();
+    this.filterRecipientId = -1;
   }
 
   @Override
   public void onAdded() {
-    DatabaseFactory.getMmsDatabase(context)
-                   .markAsSending(messageId);
   }
 
   @Override
-  public void onSend(MasterSecret masterSecret)
+  public void onPushSend(MasterSecret masterSecret)
       throws MmsException, IOException, NoSuchMessageException
   {
     MmsDatabase          database = DatabaseFactory.getMmsDatabase(context);
     OutgoingMediaMessage message  = database.getOutgoingMessage(masterSecret, messageId);
 
     try {
-      deliver(masterSecret, message, filterRecipientId);
+      deliver(masterSecret, message, filterAddress == null ? null : Address.fromSerialized(filterAddress));
 
-      database.markAsPush(messageId);
-      database.markAsSecure(messageId);
-      database.markAsSent(messageId);
+      database.markAsSent(messageId, true);
       markAttachmentsUploaded(messageId, message.getAttachments());
+
+      if (message.getExpiresIn() > 0 && !message.isExpirationUpdate()) {
+        database.markExpireStarted(messageId);
+        ApplicationContext.getInstance(context)
+                          .getExpiringMessageManager()
+                          .scheduleDeletion(messageId, true, message.getExpiresIn());
+      }
     } catch (InvalidNumberException | RecipientFormattingException | UndeliverableMessageException e) {
       Log.w(TAG, e);
       database.markAsSentFailed(messageId);
@@ -94,20 +103,22 @@ public class PushGroupSendJob extends PushSendJob implements InjectableType {
       List<NetworkFailure> failures = new LinkedList<>();
 
       for (NetworkFailureException nfe : e.getNetworkExceptions()) {
-        Recipient recipient = RecipientFactory.getRecipientsFromString(context, nfe.getE164number(), false).getPrimaryRecipient();
-        failures.add(new NetworkFailure(recipient.getRecipientId()));
+        failures.add(new NetworkFailure(Address.fromSerialized(nfe.getE164number())));
       }
 
       for (UntrustedIdentityException uie : e.getUntrustedIdentityExceptions()) {
-        Recipient recipient = RecipientFactory.getRecipientsFromString(context, uie.getE164Number(), false).getPrimaryRecipient();
-        database.addMismatchedIdentity(messageId, recipient.getRecipientId(), uie.getIdentityKey());
+        database.addMismatchedIdentity(messageId, Address.fromSerialized(uie.getE164Number()), uie.getIdentityKey());
       }
 
       database.addFailures(messageId, failures);
-      database.markAsSentFailed(messageId);
-      database.markAsPush(messageId);
 
-      notifyMediaMessageDeliveryFailed(context, messageId);
+      if (e.getNetworkExceptions().isEmpty() && e.getUntrustedIdentityExceptions().isEmpty()) {
+        database.markAsSent(messageId, true);
+        markAttachmentsUploaded(messageId, message.getAttachments());
+      } else {
+        database.markAsSentFailed(messageId);
+        notifyMediaMessageDeliveryFailed(context, messageId);
+      }
     }
   }
 
@@ -122,50 +133,64 @@ public class PushGroupSendJob extends PushSendJob implements InjectableType {
     DatabaseFactory.getMmsDatabase(context).markAsSentFailed(messageId);
   }
 
-  private void deliver(MasterSecret masterSecret, OutgoingMediaMessage message, long filterRecipientId)
+  private void deliver(MasterSecret masterSecret, OutgoingMediaMessage message, @Nullable Address filterAddress)
       throws IOException, RecipientFormattingException, InvalidNumberException,
       EncapsulatedExceptions, UndeliverableMessageException
   {
-    TextSecureMessageSender    messageSender = messageSenderFactory.create();
-    byte[]                     groupId       = GroupUtil.getDecodedId(message.getRecipients().getPrimaryRecipient().getNumber());
-    Recipients                 recipients    = DatabaseFactory.getGroupDatabase(context).getGroupMembers(groupId, false);
-    List<TextSecureAttachment> attachments   = getAttachmentsFor(masterSecret, message.getAttachments());
-    List<TextSecureAddress>    addresses;
+    SignalServiceMessageSender    messageSender     = messageSenderFactory.create();
+    String                        groupId           = message.getRecipient().getAddress().toGroupString();
+    Optional<byte[]>              profileKey        = getProfileKey(message.getRecipient());
+    List<Recipient>               recipients        = DatabaseFactory.getGroupDatabase(context).getGroupMembers(groupId, false);
+    MediaConstraints              mediaConstraints  = MediaConstraints.getPushMediaConstraints();
+    List<Attachment>              scaledAttachments = scaleAttachments(masterSecret, mediaConstraints, message.getAttachments());
+    List<SignalServiceAttachment> attachmentStreams = getAttachmentsFor(masterSecret, scaledAttachments);
 
-    if (filterRecipientId >= 0) addresses = getPushAddresses(filterRecipientId);
-    else                        addresses = getPushAddresses(recipients);
+    List<SignalServiceAddress>    addresses;
+
+    if (filterAddress != null) addresses = getPushAddresses(filterAddress);
+    else                       addresses = getPushAddresses(recipients);
 
     if (message.isGroup()) {
       OutgoingGroupMediaMessage groupMessage     = (OutgoingGroupMediaMessage) message;
       GroupContext              groupContext     = groupMessage.getGroupContext();
-      TextSecureAttachment      avatar           = attachments.isEmpty() ? null : attachments.get(0);
-      TextSecureGroup.Type      type             = groupMessage.isGroupQuit() ? TextSecureGroup.Type.QUIT : TextSecureGroup.Type.UPDATE;
-      TextSecureGroup           group            = new TextSecureGroup(type, groupId, groupContext.getName(), groupContext.getMembersList(), avatar);
-      TextSecureDataMessage     groupDataMessage = new TextSecureDataMessage(message.getSentTimeMillis(), group, null, null);
+      SignalServiceAttachment   avatar           = attachmentStreams.isEmpty() ? null : attachmentStreams.get(0);
+      SignalServiceGroup.Type   type             = groupMessage.isGroupQuit() ? SignalServiceGroup.Type.QUIT : SignalServiceGroup.Type.UPDATE;
+      SignalServiceGroup        group            = new SignalServiceGroup(type, GroupUtil.getDecodedId(groupId), groupContext.getName(), groupContext.getMembersList(), avatar);
+      SignalServiceDataMessage  groupDataMessage = SignalServiceDataMessage.newBuilder()
+                                                                           .withTimestamp(message.getSentTimeMillis())
+                                                                           .asGroupMessage(group)
+                                                                           .build();
 
       messageSender.sendMessage(addresses, groupDataMessage);
     } else {
-      TextSecureGroup       group        = new TextSecureGroup(groupId);
-      TextSecureDataMessage groupMessage = new TextSecureDataMessage(message.getSentTimeMillis(), group, attachments, message.getBody());
+      SignalServiceGroup       group        = new SignalServiceGroup(GroupUtil.getDecodedId(groupId));
+      SignalServiceDataMessage groupMessage = SignalServiceDataMessage.newBuilder()
+                                                                      .withTimestamp(message.getSentTimeMillis())
+                                                                      .asGroupMessage(group)
+                                                                      .withAttachments(attachmentStreams)
+                                                                      .withBody(message.getBody())
+                                                                      .withExpiration((int)(message.getExpiresIn() / 1000))
+                                                                      .asExpirationUpdate(message.isExpirationUpdate())
+                                                                      .withProfileKey(profileKey.orNull())
+                                                                      .build();
 
       messageSender.sendMessage(addresses, groupMessage);
     }
   }
 
-  private List<TextSecureAddress> getPushAddresses(Recipients recipients) throws InvalidNumberException {
-    List<TextSecureAddress> addresses = new LinkedList<>();
+  private List<SignalServiceAddress> getPushAddresses(Address address) {
+    List<SignalServiceAddress> addresses = new LinkedList<>();
+    addresses.add(getPushAddress(address));
+    return addresses;
+  }
 
-    for (Recipient recipient : recipients.getRecipientsList()) {
-      addresses.add(getPushAddress(recipient.getNumber()));
+  private List<SignalServiceAddress> getPushAddresses(List<Recipient> recipients) {
+    List<SignalServiceAddress> addresses = new LinkedList<>();
+
+    for (Recipient recipient : recipients) {
+      addresses.add(getPushAddress(recipient.getAddress()));
     }
 
     return addresses;
   }
-
-  private List<TextSecureAddress> getPushAddresses(long filterRecipientId) throws InvalidNumberException {
-    List<TextSecureAddress> addresses = new LinkedList<>();
-    addresses.add(getPushAddress(RecipientFactory.getRecipientForId(context, filterRecipientId, false).getNumber()));
-    return addresses;
-  }
-
 }

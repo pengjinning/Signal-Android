@@ -12,7 +12,7 @@ import android.widget.TextView;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.whispersystems.libaxolotl.util.guava.Optional;
+import org.whispersystems.libsignal.util.guava.Optional;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -106,7 +106,7 @@ public class SelectedRecipientsAdapter extends BaseAdapter {
     ImageButton delete = (ImageButton) v.findViewById(R.id.delete);
 
     name.setText(p.getName());
-    phone.setText(p.getNumber());
+    phone.setText(p.getAddress().serialize());
     delete.setVisibility(modifiable ? View.VISIBLE : View.GONE);
     delete.setOnClickListener(new View.OnClickListener() {
       @Override

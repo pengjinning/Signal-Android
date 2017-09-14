@@ -20,27 +20,25 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.util.Log;
 import android.util.Pair;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.crypto.AsymmetricMasterCipher;
 import org.thoughtcrime.securesms.crypto.AsymmetricMasterSecret;
+import org.thoughtcrime.securesms.crypto.MasterCipher;
+import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.crypto.MasterSecretUnion;
-import org.thoughtcrime.securesms.crypto.MasterSecretUtil;
 import org.thoughtcrime.securesms.database.model.DisplayRecord;
 import org.thoughtcrime.securesms.database.model.SmsMessageRecord;
 import org.thoughtcrime.securesms.sms.IncomingTextMessage;
 import org.thoughtcrime.securesms.sms.OutgoingTextMessage;
 import org.thoughtcrime.securesms.util.LRUCache;
-import org.whispersystems.libaxolotl.InvalidMessageException;
-import org.thoughtcrime.securesms.crypto.MasterCipher;
-import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.whispersystems.libsignal.InvalidMessageException;
+import org.whispersystems.libsignal.util.guava.Optional;
 
 import java.lang.ref.SoftReference;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 public class EncryptingSmsDatabase extends SmsDatabase {
@@ -66,9 +64,9 @@ public class EncryptingSmsDatabase extends SmsDatabase {
 
   public long insertMessageOutbox(MasterSecretUnion masterSecret, long threadId,
                                   OutgoingTextMessage message, boolean forceSms,
-                                  long timestamp)
+                                  long timestamp, InsertListener insertListener)
   {
-    long type = Types.BASE_OUTBOX_TYPE;
+    long type = Types.BASE_SENDING_TYPE;
 
     if (masterSecret.getMasterSecret().isPresent()) {
       message = message.withBody(getEncryptedBody(masterSecret.getMasterSecret().get(), message.getMessageBody()));
@@ -78,11 +76,11 @@ public class EncryptingSmsDatabase extends SmsDatabase {
       type   |= Types.ENCRYPTION_ASYMMETRIC_BIT;
     }
 
-    return insertMessageOutbox(threadId, message, type, forceSms, timestamp);
+    return insertMessageOutbox(threadId, message, type, forceSms, timestamp, insertListener);
   }
 
-  public Pair<Long, Long> insertMessageInbox(@NonNull MasterSecretUnion masterSecret,
-                                             @NonNull IncomingTextMessage message)
+  public Optional<InsertResult> insertMessageInbox(@NonNull MasterSecretUnion masterSecret,
+                                                   @NonNull IncomingTextMessage message)
   {
     if (masterSecret.getMasterSecret().isPresent()) {
       return insertMessageInbox(masterSecret.getMasterSecret().get(), message);
@@ -91,8 +89,8 @@ public class EncryptingSmsDatabase extends SmsDatabase {
     }
   }
 
-  private Pair<Long, Long> insertMessageInbox(@NonNull MasterSecret masterSecret,
-                                              @NonNull IncomingTextMessage message)
+  private Optional<InsertResult> insertMessageInbox(@NonNull MasterSecret masterSecret,
+                                                    @NonNull IncomingTextMessage message)
   {
     long type = Types.BASE_INBOX_TYPE | Types.ENCRYPTION_SYMMETRIC_BIT;
 
@@ -101,8 +99,8 @@ public class EncryptingSmsDatabase extends SmsDatabase {
     return insertMessageInbox(message, type);
   }
 
-  private Pair<Long, Long> insertMessageInbox(@NonNull AsymmetricMasterSecret masterSecret,
-                                              @NonNull IncomingTextMessage message)
+  private Optional<InsertResult> insertMessageInbox(@NonNull AsymmetricMasterSecret masterSecret,
+                                                    @NonNull IncomingTextMessage message)
   {
     long type = Types.BASE_INBOX_TYPE | Types.ENCRYPTION_ASYMMETRIC_BIT;
 
@@ -112,7 +110,7 @@ public class EncryptingSmsDatabase extends SmsDatabase {
   }
 
   public Pair<Long, Long> updateBundleMessageBody(MasterSecretUnion masterSecret, long messageId, String body) {
-    long type = Types.BASE_INBOX_TYPE | Types.SECURE_MESSAGE_BIT;
+    long type = Types.BASE_INBOX_TYPE | Types.SECURE_MESSAGE_BIT | Types.PUSH_MESSAGE_BIT;
     String encryptedBody;
 
     if (masterSecret.getMasterSecret().isPresent()) {

@@ -2,7 +2,6 @@ package org.thoughtcrime.securesms.components;
 
 import android.content.Context;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.support.v7.widget.Toolbar;
 import android.text.Editable;
 import android.text.InputType;
@@ -23,7 +22,6 @@ public class ContactFilterToolbar extends Toolbar {
 
   private EditText        searchText;
   private AnimatingToggle toggle;
-  private ImageView       action;
   private ImageView       keyboardToggle;
   private ImageView       dialpadToggle;
   private ImageView       clearToggle;
@@ -41,8 +39,6 @@ public class ContactFilterToolbar extends Toolbar {
     super(context, attrs, defStyleAttr);
     inflate(context, R.layout.contact_filter_toolbar, this);
 
-
-    this.action          = ViewUtil.findById(this, R.id.action_icon);
     this.searchText      = ViewUtil.findById(this, R.id.search_view);
     this.toggle          = ViewUtil.findById(this, R.id.button_toggle);
     this.keyboardToggle  = ViewUtil.findById(this, R.id.search_keyboard);
@@ -97,23 +93,10 @@ public class ContactFilterToolbar extends Toolbar {
         notifyListener();
       }
     });
-    expandTapArea(this, action, 500);
-    expandTapArea(toggleContainer, dialpadToggle, 500);
-  }
 
-  @Override
-  public void setNavigationIcon(int resId) {
-    action.setImageResource(resId);
-  }
-
-  @Override
-  public void setNavigationOnClickListener(OnClickListener listener) {
-    super.setNavigationOnClickListener(listener);
-    action.setOnClickListener(listener);
-  }
-
-  public void setShowCustomNavigationButton(boolean show) {
-    action.setVisibility(show ? VISIBLE : GONE);
+    setLogo(null);
+    setContentInsetStartWithNavigation(0);
+    expandTapArea(toggleContainer, dialpadToggle);
   }
 
   public void clear() {
@@ -131,10 +114,12 @@ public class ContactFilterToolbar extends Toolbar {
 
   private void displayTogglingView(View view) {
     toggle.display(view);
-    expandTapArea(toggleContainer, view, 500);
+    expandTapArea(toggleContainer, view);
   }
 
-  private void expandTapArea(final View container, final View child, final int padding) {
+  private void expandTapArea(final View container, final View child) {
+    final int padding = getResources().getDimensionPixelSize(R.dimen.contact_selection_actions_tap_area);
+
     container.post(new Runnable() {
       @Override
       public void run() {
@@ -152,11 +137,11 @@ public class ContactFilterToolbar extends Toolbar {
   }
 
   private static class SearchUtil {
-    public static boolean isTextInput(EditText editText) {
+    static boolean isTextInput(EditText editText) {
       return (editText.getInputType() & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_TEXT;
     }
 
-    public static boolean isPhoneInput(EditText editText) {
+    static boolean isPhoneInput(EditText editText) {
       return (editText.getInputType() & InputType.TYPE_MASK_CLASS) == InputType.TYPE_CLASS_PHONE;
     }
 

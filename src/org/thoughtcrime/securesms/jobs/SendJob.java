@@ -7,19 +7,18 @@ import org.thoughtcrime.securesms.BuildConfig;
 import org.thoughtcrime.securesms.TextSecureExpiredException;
 import org.thoughtcrime.securesms.attachments.Attachment;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
-import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.AttachmentDatabase;
+import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.mms.MediaConstraints;
+import org.thoughtcrime.securesms.mms.MediaStream;
+import org.thoughtcrime.securesms.mms.MmsException;
 import org.thoughtcrime.securesms.transport.UndeliverableMessageException;
 import org.thoughtcrime.securesms.util.Util;
 import org.whispersystems.jobqueue.JobParameters;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.LinkedList;
 import java.util.List;
-
-import ws.com.google.android.mms.MmsException;
 
 public abstract class SendJob extends MasterSecretJob {
 
@@ -31,7 +30,7 @@ public abstract class SendJob extends MasterSecretJob {
 
   @Override
   public final void onRun(MasterSecret masterSecret) throws Exception {
-    if (!Util.isBuildFresh()) {
+    if (Util.getDaysTillBuildExpiry() <= 0) {
       throw new TextSecureExpiredException(String.format("TextSecure expired (build %d, now %d)",
                                                          BuildConfig.BUILD_TIMESTAMP,
                                                          System.currentTimeMillis()));
@@ -63,7 +62,7 @@ public abstract class SendJob extends MasterSecretJob {
         if (constraints.isSatisfied(context, masterSecret, attachment)) {
           results.add(attachment);
         } else if (constraints.canResize(attachment)) {
-          InputStream resized = constraints.getResizedMedia(context, masterSecret, attachment);
+          MediaStream resized = constraints.getResizedMedia(context, masterSecret, attachment);
           results.add(attachmentDatabase.updateAttachmentData(masterSecret, attachment, resized));
         } else {
           throw new UndeliverableMessageException("Size constraints could not be met!");

@@ -7,6 +7,9 @@
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
+        android:focusable="true"
+        android:nextFocusLeft="@id/container"
+        android:nextFocusRight="@id/embedded_text_editor"
         android:background="@drawable/conversation_item_background">
 
     <RelativeLayout android:layout_width="match_parent"
@@ -16,35 +19,15 @@
                     android:layout_marginBottom="6dp"
                     android:layout_marginRight="0dp">
 
-        <LinearLayout android:id="@+id/indicators_parent"
-                      android:layout_width="wrap_content"
-                      android:layout_height="wrap_content"
-                      android:orientation="vertical"
-                      android:gravity="left|center_vertical"
-                      android:layout_marginLeft="6dp"
-                      android:layout_alignParentLeft="true"
-                      android:layout_centerVertical="true">
-
-            <ImageView
-                android:id="@+id/sms_failed_indicator"
+        <org.thoughtcrime.securesms.components.AlertView
+                android:id="@+id/indicators_parent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:src="@drawable/ic_error_red_24dp"
-                tools:visibility="visible"
-                android:visibility="gone"
-                android:contentDescription="@string/conversation_item_sent__send_failed_indicator_description" />
-
-            <ImageView
-                android:id="@+id/pending_approval_indicator"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:src="@drawable/ic_info_outline_grey600_24dp"
-                android:visibility="gone"
-                android:layout_gravity="center_vertical"
-                android:contentDescription="@string/conversation_item_sent__pending_approval_description"
-                tools:visibility="visible" />
-
-        </LinearLayout>
+                android:orientation="vertical"
+                android:gravity="left|center_vertical"
+                android:layout_marginLeft="6dp"
+                android:layout_alignParentLeft="true"
+                android:layout_centerVertical="true"/>
 
         <LinearLayout android:id="@+id/body_bubble"
                       android:layout_width="wrap_content"
@@ -55,62 +38,35 @@
                       android:background="@drawable/sent_bubble"
                       android:orientation="vertical">
 
-            <org.thoughtcrime.securesms.components.ThumbnailView
-                    android:id="@+id/image_view"
+            <ViewStub
+                    android:id="@+id/image_view_stub"
                     android:layout_width="@dimen/media_bubble_height"
                     android:layout_height="@dimen/media_bubble_height"
-                    android:layout_marginBottom="5dp"
-                    android:layout_gravity="center"
-                    android:scaleType="centerCrop"
-                    android:adjustViewBounds="true"
-                    android:contentDescription="@string/conversation_item__mms_image_description"
-                    android:visibility="gone"
-                    tools:src="@drawable/ic_video_light"
-                    tools:visibility="visible" />
+                    android:layout="@layout/conversation_item_sent_thumbnail"/>
 
-            <org.thoughtcrime.securesms.components.AudioView
-                    android:id="@+id/audio_view"
+            <ViewStub
+                    android:id="@+id/audio_view_stub"
+                    android:layout="@layout/conversation_item_sent_audio"
                     android:layout_width="210dp"
-                    android:layout_height="wrap_content"
-                    app:tintColor="@color/grey_500"
-                    android:visibility="gone"/>
+                    android:layout_height="wrap_content"/>
+
+            <ViewStub android:id="@+id/document_view_stub"
+                      android:layout="@layout/conversation_item_sent_document"
+                      android:layout_width="210dp"
+                      android:layout_height="wrap_content"/>
 
             <org.thoughtcrime.securesms.components.emoji.EmojiTextView
                     android:id="@+id/conversation_item_body"
-                    android:autoLink="all"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:paddingLeft="4dp"
                     android:paddingRight="4dp"
-                    android:linksClickable="true"
                     android:textAppearance="?android:attr/textAppearanceSmall"
                     android:textColor="?conversation_item_sent_text_primary_color"
                     android:textColorLink="?conversation_item_sent_text_primary_color"
                     android:textSize="@dimen/conversation_item_body_text_size"
-                    tools:text="Mango pickle lorem ipsum" />
-
-            <LinearLayout android:id="@+id/mms_download_controls"
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:orientation="horizontal">
-
-                <Button android:id="@+id/mms_download_button"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical"
-                        android:text="@string/conversation_item_sent__download"
-                        android:visibility="gone" />
-
-                <TextView android:id="@+id/mms_label_downloading"
-                          android:layout_width="wrap_content"
-                          android:layout_height="wrap_content"
-                          android:layout_marginLeft="5dp"
-                          android:layout_marginRight="5dp"
-                          android:gravity="center"
-                          android:text="@string/conversation_item_sent__downloading"
-                          android:visibility="gone" />
-
-            </LinearLayout>
+                    app:scaleEmojis="true"
+                    tools:text="Mango pickle lorem ipsum"/>
 
             <LinearLayout android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
@@ -119,7 +75,12 @@
                           android:paddingRight="4dp"
                           android:layout_gravity="right">
 
-                <TextView android:id="@+id/group_message_status"
+                <View android:id="@+id/group_sender_holder"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone"/>
+
+                <TextView android:id="@+id/group_message_sender"
                           android:layout_width="wrap_content"
                           android:layout_height="wrap_content"
                           android:linksClickable="false"
@@ -130,6 +91,18 @@
                           android:layout_marginRight="8dip"
                           android:paddingTop="1dip" />
 
+                <TextView android:id="@+id/group_message_sender_profile"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:linksClickable="false"
+                          android:textAppearance="?android:attr/textAppearanceSmall"
+                          android:layout_gravity="right"
+                          android:textColor="?conversation_item_sent_text_secondary_color"
+                          android:visibility="gone"
+                          android:layout_marginRight="8dip"
+                          android:paddingTop="1dip" />
+
+
                 <TextView android:id="@+id/conversation_item_date"
                           android:autoLink="none"
                           android:layout_width="wrap_content"
@@ -137,7 +110,7 @@
                           android:minWidth="15sp"
                           android:linksClickable="false"
                           android:textAppearance="?android:attr/textAppearanceSmall"
-                          android:layout_gravity="right"
+                          android:layout_gravity="right|bottom"
                           android:fontFamily="sans-serif-light"
                           android:textColor="?conversation_item_sent_text_secondary_color"
                           android:textSize="@dimen/conversation_item_date_text_size"
@@ -145,33 +118,46 @@
                           android:paddingBottom="2dp"
                           tools:text="30 mins" />
 
-                <FrameLayout android:id="@+id/pending_indicator_stub"
-                             android:layout_width="wrap_content"
-                             android:layout_height="wrap_content"/>
+                <TextView android:id="@+id/sim_info"
+                          android:autoLink="none"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:minWidth="15sp"
+                          android:linksClickable="false"
+                          android:textAppearance="?android:attr/textAppearanceSmall"
+                          android:layout_gravity="right|bottom"
+                          android:fontFamily="sans-serif-light"
+                          android:textColor="?conversation_item_sent_text_secondary_color"
+                          android:textSize="@dimen/conversation_item_date_text_size"
+                          android:paddingTop="1dip"
+                          android:paddingBottom="2dp"
+                          android:paddingLeft="4dp"
+                          android:paddingStart="4dp"
+                          android:visibility="gone"
+                          tools:visibility="visible"
+                          tools:text="to SIM1"/>
 
-                <ImageView android:id="@+id/sent_indicator"
-                           android:layout_width="wrap_content"
-                           android:layout_height="wrap_content"
-                           android:layout_gravity="center_vertical|end"
-                           android:src="@drawable/ic_done_white_18dp"
-                           android:paddingLeft="2dp"
-                           android:paddingBottom="2dp"
-                           android:visibility="gone"
-                           android:tint="?conversation_item_sent_text_secondary_color"
-                           android:tintMode="multiply"
-                           android:contentDescription="@string/conversation_item_sent__delivered_description" />
+                <org.thoughtcrime.securesms.components.DeliveryStatusView
+                        android:id="@+id/delivery_status"
+                        android:layout_width="20dp"
+                        android:layout_height="wrap_content"
+                        android:alpha=".7"
+                        app:iconColor="?conversation_item_sent_text_secondary_color"/>
 
-                <ImageView android:id="@+id/delivered_indicator"
-                           android:layout_width="wrap_content"
-                           android:layout_height="wrap_content"
-                           android:layout_gravity="center_vertical|end"
-                           android:src="@drawable/ic_done_all_white_18dp"
-                           android:paddingLeft="2dp"
-                           android:paddingBottom="2dp"
-                           android:visibility="gone"
-                           android:tint="?conversation_item_sent_text_secondary_color"
-                           android:tintMode="multiply"
-                           android:contentDescription="@string/conversation_item_sent__delivered_description" />
+                <org.thoughtcrime.securesms.components.ExpirationTimerView
+                        android:id="@+id/expiration_indicator"
+                        app:empty="@drawable/ic_hourglass_empty_white_18dp"
+                        app:full="@drawable/ic_hourglass_full_white_18dp"
+                        app:tint="@color/black"
+                        app:percentage="0"
+                        app:offset="0"
+                        android:layout_gravity="center_vertical|end"
+                        android:alpha=".6"
+                        android:layout_marginLeft="3dp"
+                        android:layout_width="10dp"
+                        android:layout_height="11dp"
+                        android:visibility="gone"
+                        tools:visibility="visible"/>
 
                 <ImageView android:id="@+id/secure_indicator"
                            android:layout_width="wrap_content"
@@ -180,10 +166,10 @@
                            android:visibility="gone"
                            android:layout_gravity="center_vertical|end"
                            android:paddingLeft="2dp"
-                           android:paddingBottom="3dp"
                            android:tint="?conversation_item_sent_text_secondary_color"
                            android:tintMode="multiply"
-                           android:contentDescription="@string/conversation_item__secure_message_description" />
+                           android:contentDescription="@string/conversation_item__secure_message_description"
+                           tools:visibility="visible"/>
 
             </LinearLayout>
         </LinearLayout>

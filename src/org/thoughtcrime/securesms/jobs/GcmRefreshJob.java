@@ -28,17 +28,15 @@ import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 
-import org.thoughtcrime.redphone.signaling.RedPhoneAccountManager;
-import org.thoughtcrime.redphone.signaling.UnauthorizedException;
 import org.thoughtcrime.securesms.PlayServicesProblemActivity;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.dependencies.InjectableType;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.whispersystems.jobqueue.JobParameters;
 import org.whispersystems.jobqueue.requirements.NetworkRequirement;
-import org.whispersystems.libaxolotl.util.guava.Optional;
-import org.whispersystems.textsecure.api.TextSecureAccountManager;
-import org.whispersystems.textsecure.api.push.exceptions.NonSuccessfulResponseCodeException;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.SignalServiceAccountManager;
+import org.whispersystems.signalservice.api.push.exceptions.NonSuccessfulResponseCodeException;
 
 import javax.inject.Inject;
 
@@ -48,11 +46,13 @@ public class GcmRefreshJob extends ContextJob implements InjectableType {
 
   public static final String REGISTRATION_ID = "312334754206";
 
-  @Inject transient TextSecureAccountManager textSecureAccountManager;
-  @Inject transient RedPhoneAccountManager   redPhoneAccountManager;
+  @Inject transient SignalServiceAccountManager textSecureAccountManager;
 
   public GcmRefreshJob(Context context) {
-    super(context, JobParameters.newBuilder().withRequirement(new NetworkRequirement(context)).create());
+    super(context, JobParameters.newBuilder()
+                                .withRequirement(new NetworkRequirement(context))
+                                .withRetryCount(1)
+                                .create());
   }
 
   @Override
@@ -60,27 +60,20 @@ public class GcmRefreshJob extends ContextJob implements InjectableType {
 
   @Override
   public void onRun() throws Exception {
-    String registrationId = TextSecurePreferences.getGcmRegistrationId(context);
+    if (TextSecurePreferences.isGcmDisabled(context)) return;
 
-    if (registrationId == null) {
-      Log.w(TAG, "GCM registrationId expired, reregistering...");
-      int result = GooglePlayServicesUtil.isGooglePlayServicesAvailable(context);
+    Log.w(TAG, "Reregistering GCM...");
+    int result = GooglePlayServicesUtil.isGooglePlayServicesAvailable(context);
 
-      if (result != ConnectionResult.SUCCESS) {
-        notifyGcmFailure();
-      } else {
-        String gcmId = GoogleCloudMessaging.getInstance(context).register(REGISTRATION_ID);
-        textSecureAccountManager.setGcmId(Optional.of(gcmId));
+    if (result != ConnectionResult.SUCCESS) {
+      notifyGcmFailure();
+    } else {
+      String gcmId = GoogleCloudMessaging.getInstance(context).register(REGISTRATION_ID);
+      textSecureAccountManager.setGcmId(Optional.of(gcmId));
 
-        try {
-          redPhoneAccountManager.setGcmId(Optional.of(gcmId));
-        } catch (UnauthorizedException e) {
-          Log.w(TAG, e);
-        }
-
-        TextSecurePreferences.setGcmRegistrationId(context, gcmId);
-        TextSecurePreferences.setWebsocketRegistered(context, true);
-      }
+      TextSecurePreferences.setGcmRegistrationId(context, gcmId);
+      TextSecurePreferences.setGcmRegistrationIdLastSetTime(context, System.currentTimeMillis());
+      TextSecurePreferences.setWebsocketRegistered(context, true);
     }
   }
 

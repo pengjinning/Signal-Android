@@ -21,12 +21,11 @@ import android.database.Cursor;
 import android.database.DataSetObserver;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.VisibleForTesting;
 import android.support.v7.widget.RecyclerView;
 import android.support.v7.widget.RecyclerView.ViewHolder;
 import android.view.View;
 import android.view.ViewGroup;
-
-import org.thoughtcrime.securesms.util.VisibleForTesting;
 
 /**
  * RecyclerView.Adapter that manages a Cursor, comparable to the CursorAdapter usable in ListView/GridView.
@@ -35,8 +34,10 @@ public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHold
   private final Context context;
   private final DataSetObserver observer = new AdapterDataSetObserver();
 
-  @VisibleForTesting final static int HEADER_TYPE = Integer.MIN_VALUE;
-  @VisibleForTesting final static int FOOTER_TYPE = Integer.MIN_VALUE + 1;
+  @VisibleForTesting static final int  HEADER_TYPE = Integer.MIN_VALUE;
+  @VisibleForTesting static final int  FOOTER_TYPE = Integer.MIN_VALUE + 1;
+  @VisibleForTesting static final long HEADER_ID   = Long.MIN_VALUE;
+  @VisibleForTesting static final long FOOTER_ID   = Long.MIN_VALUE + 1;
 
   private           Cursor  cursor;
   private           boolean valid;
@@ -114,6 +115,7 @@ public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHold
     if (!isActiveCursor()) return 0;
 
     return cursor.getCount()
+           + getFastAccessSize()
            + (hasHeaderView() ? 1 : 0)
            + (hasFooterView() ? 1 : 0);
   }
@@ -128,7 +130,8 @@ public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHold
 
   public void onItemViewRecycled(VH holder) {}
 
-  @Override public final ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+  @Override
+  public final ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
     switch (viewType) {
     case HEADER_TYPE: return new HeaderFooterViewHolder(header);
     case FOOTER_TYPE: return new HeaderFooterViewHolder(footer);
@@ -142,51 +145,86 @@ public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHold
   @Override
   public final void onBindViewHolder(RecyclerView.ViewHolder viewHolder, int position) {
     if (!isHeaderPosition(position) && !isFooterPosition(position)) {
-      moveToPositionOrThrow(getCursorPosition(position));
-      onBindItemViewHolder((VH)viewHolder, cursor);
+      if (isFastAccessPosition(position)) onBindFastAccessItemViewHolder((VH)viewHolder, position);
+      else                                onBindItemViewHolder((VH)viewHolder, getCursorAtPositionOrThrow(position));
     }
   }
 
   public abstract void onBindItemViewHolder(VH viewHolder, @NonNull Cursor cursor);
 
-  @Override public int getItemViewType(int position) {
-    if (isHeaderPosition(position)) return HEADER_TYPE;
-    if (isFooterPosition(position)) return FOOTER_TYPE;
-    moveToPositionOrThrow(getCursorPosition(position));
-    return getItemViewType(cursor);
+  protected void onBindFastAccessItemViewHolder(VH viewHolder, int position) {
+
+  }
+
+  @Override
+  public final int getItemViewType(int position) {
+    if (isHeaderPosition(position))     return HEADER_TYPE;
+    if (isFooterPosition(position))     return FOOTER_TYPE;
+    if (isFastAccessPosition(position)) return getFastAccessItemViewType(position);
+    return getItemViewType(getCursorAtPositionOrThrow(position));
   }
 
   public int getItemViewType(@NonNull Cursor cursor) {
     return 0;
   }
 
-  private void assertActiveCursor() {
+  @Override
+  public final long getItemId(int position) {
+    if (isHeaderPosition(position))     return HEADER_ID;
+    if (isFooterPosition(position))     return FOOTER_ID;
+    if (isFastAccessPosition(position)) return getFastAccessItemId(position);
+    long itemId = getItemId(getCursorAtPositionOrThrow(position));
+    return itemId <= Long.MIN_VALUE + 1 ? itemId + 2 : itemId;
+  }
+
+  public long getItemId(@NonNull Cursor cursor) {
+    return cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
+  }
+
+  protected @NonNull Cursor getCursorAtPositionOrThrow(final int position) {
     if (!isActiveCursor()) {
       throw new IllegalStateException("this should only be called when the cursor is valid");
     }
-  }
-
-  private void moveToPositionOrThrow(final int position) {
-    assertActiveCursor();
-    if (!cursor.moveToPosition(position)) {
+    if (!cursor.moveToPosition(getCursorPosition(position))) {
       throw new IllegalStateException("couldn't move cursor to position " + position);
     }
+    return cursor;
   }
 
-  private boolean isActiveCursor() {
+  protected boolean isActiveCursor() {
     return valid && cursor != null;
   }
 
-  private boolean isFooterPosition(int position) {
+  protected boolean isFooterPosition(int position) {
     return hasFooterView() && position == getItemCount() - 1;
   }
 
-  private boolean isHeaderPosition(int position) {
+  protected boolean isHeaderPosition(int position) {
     return hasHeaderView() && position == 0;
   }
 
   private int getCursorPosition(int position) {
-    return hasHeaderView() ? position - 1 : position;
+    if (hasHeaderView()) {
+      position -= 1;
+    }
+
+    return position - getFastAccessSize();
+  }
+
+  protected int getFastAccessItemViewType(int position) {
+    return 0;
+  }
+
+  protected boolean isFastAccessPosition(int position) {
+    return false;
+  }
+
+  protected long getFastAccessItemId(int position) {
+    return 0;
+  }
+
+  protected int getFastAccessSize() {
+    return 0;
   }
 
   private class AdapterDataSetObserver extends DataSetObserver {
@@ -194,14 +232,12 @@ public abstract class CursorRecyclerViewAdapter<VH extends RecyclerView.ViewHold
     public void onChanged() {
       super.onChanged();
       valid = true;
-      notifyDataSetChanged();
     }
 
     @Override
     public void onInvalidated() {
       super.onInvalidated();
       valid = false;
-      notifyDataSetChanged();
     }
   }
 }

@@ -39,11 +39,14 @@ public class NotificationsPreferenceFragment extends ListSummaryPreferenceFragme
         .setOnPreferenceChangeListener(new ListSummaryListener());
     this.findPreference(TextSecurePreferences.NOTIFICATION_PRIVACY_PREF)
         .setOnPreferenceChangeListener(new NotificationPrivacyListener());
+    this.findPreference(TextSecurePreferences.NOTIFICATION_PRIORITY_PREF)
+        .setOnPreferenceChangeListener(new ListSummaryListener());
 
     initializeListSummary((ListPreference) findPreference(TextSecurePreferences.LED_COLOR_PREF));
     initializeListSummary((ListPreference) findPreference(TextSecurePreferences.LED_BLINK_PREF));
     initializeListSummary((ListPreference) findPreference(TextSecurePreferences.REPEAT_ALERTS_PREF));
     initializeListSummary((ListPreference) findPreference(TextSecurePreferences.NOTIFICATION_PRIVACY_PREF));
+    initializeListSummary((ListPreference) findPreference(TextSecurePreferences.NOTIFICATION_PRIORITY_PREF));
     initializeRingtoneSummary((RingtonePreference) findPreference(TextSecurePreferences.RINGTONE_PREF));
   }
 
@@ -59,7 +62,7 @@ public class NotificationsPreferenceFragment extends ListSummaryPreferenceFragme
       String value = (String) newValue;
 
       if (TextUtils.isEmpty(value)) {
-        preference.setSummary(R.string.preferences__default);
+        preference.setSummary(R.string.preferences__silent);
       } else {
         Ringtone tone = RingtoneManager.getRingtone(getActivity(), Uri.parse(value));
         if (tone != null) {

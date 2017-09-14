@@ -24,6 +24,9 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.Log;
 
+import com.google.android.mms.pdu_alt.PduParser;
+import com.google.android.mms.pdu_alt.SendConf;
+
 import org.apache.http.Header;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
@@ -34,8 +37,6 @@ import org.thoughtcrime.securesms.transport.UndeliverableMessageException;
 
 import java.io.IOException;
 
-import ws.com.google.android.mms.pdu.PduParser;
-import ws.com.google.android.mms.pdu.SendConf;
 
 @SuppressWarnings("deprecation")
 public class OutgoingLegacyMmsConnection extends LegacyMmsConnection implements OutgoingMmsConnection {
@@ -72,11 +73,11 @@ public class OutgoingLegacyMmsConnection extends LegacyMmsConnection implements 
   }
 
   @Override
-  public @Nullable SendConf send(@NonNull byte[] pduBytes) throws UndeliverableMessageException {
+  public @Nullable SendConf send(@NonNull byte[] pduBytes, int subscriptionId) throws UndeliverableMessageException {
     try {
       MmsRadio radio = MmsRadio.getInstance(context);
 
-      if (isCdmaDevice()) {
+      if (isDirectConnect()) {
         Log.w(TAG, "Sending MMS directly without radio change...");
         try {
           return send(pduBytes, false, false);

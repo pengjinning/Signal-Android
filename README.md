@@ -6,7 +6,7 @@ Signal uses your phone's data connection (WiFi/3G/4G) to communicate securely, o
 
 Currently available on the Play store.
 
-*[![Play Store Badge](https://developer.android.com/images/brand/en_app_rgb_wo_60.png)](https://play.google.com/store/apps/details?id=org.thoughtcrime.securesms)*
+<a href='https://play.google.com/store/apps/details?id=org.thoughtcrime.securesms&pcampaignid=MKT-Other-global-all-co-prtnr-py-PartBadge-Mar2515-1'><img alt='Get it on Google Play' src='https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png' height='80px'/></a>
 
 ## Contributing Bug reports
 We use GitHub for bug tracking. Please search the existing issues for your bug and create a new one if the issue is not yet tracked!
@@ -24,28 +24,20 @@ If you're interested in a life of peace and tranquility, stick with the standard
 ## Contributing Translations
 Interested in helping to translate Signal? Contribute here:
 
-https://www.transifex.com/projects/p/textsecure-official/
+https://www.transifex.com/projects/p/signal-android/
 
 ## Contributing Code
 Instructions on how to setup your development environment and build Signal can be found in  [BUILDING.md](https://github.com/WhisperSystems/Signal-Android/blob/master/BUILDING.md).
 
-If you're new to the Signal codebase, we recommend going through our issues and picking out a simple bug to fix (check the "easy" label in our issues) in order to get yourself familiar.
+If you're new to the Signal codebase, we recommend going through our issues and picking out a simple bug to fix (check the "easy" label in our issues) in order to get yourself familiar. Also please have a look at the [CONTRIBUTING.md](https://github.com/WhisperSystems/Signal-Android/blob/master/CONTRIBUTING.md), that might answer some of your questions.
 
-For larger changes and feature ideas, we ask that you propose it on the mailing list for a high-level discussion before implementation.
-
-This repository is set up with [BitHub](https://whispersystems.org/blog/bithub/), so you can make money for committing to Signal. The current BitHub price for an accepted pull request is:
-
-[![Current BitHub Price](https://bithub.herokuapp.com/v1/status/payment/commit/)](https://whispersystems.org/blog/bithub/)
+For larger changes and feature ideas, we ask that you propose it on the [unofficial Community Forum](https://whispersystems.discoursehosting.net) for a high-level discussion with the wider community before implementation.
 
 ## Contributing Ideas
-Have something you want to say about Open Whisper Systems projects or want to be part of the conversation? Get involved in the mailing list!
-
-whispersystems@lists.riseup.net
-
-https://lists.riseup.net/www/info/whispersystems
+Have something you want to say about Open Whisper Systems projects or want to be part of the conversation? Get involved in the [community forum](https://whispersystems.discoursehosting.net).
 
 ## Contributing Funds
-[![Donate](https://www.coinbase.com/assets/buttons/donation_large-5e1b50d6490970e32b80023f3070b1d77afc621b9e64ac996596a67a4671967b.png)](https://www.coinbase.com/checkouts/51dac699e660a4d773216b5ad94d6a0b)
+[![Donate](https://cloud.githubusercontent.com/assets/3121306/11278543/d46e03d0-8eeb-11e5-9691-0da1bf643192.png)](https://www.coinbase.com/checkouts/51dac699e660a4d773216b5ad94d6a0b)
 
 You can add funds to BitHub to directly help further development efforts.
 
@@ -54,7 +46,7 @@ Help
 ## Support
 For troubleshooting and questions, please visit our support center!
 
-http://support.whispersystems.org/
+https://support.whispersystems.org/
 
 ## Documentation
 Looking for documentation? Check out the wiki!
@@ -75,6 +67,8 @@ The form and manner of this distribution makes it eligible for export under the 
 
 Copyright 2011 Whisper Systems
 
-Copyright 2013-2014 Open Whisper Systems
+Copyright 2013-2017 Open Whisper Systems
 
 Licensed under the GPLv3: http://www.gnu.org/licenses/gpl-3.0.html
+
+Google Play and the Google Play logo are trademarks of Google Inc.

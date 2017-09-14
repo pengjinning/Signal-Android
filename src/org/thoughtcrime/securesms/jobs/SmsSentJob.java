@@ -7,8 +7,6 @@ import android.util.Log;
 
 import org.thoughtcrime.securesms.ApplicationContext;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
-import org.thoughtcrime.securesms.crypto.SecurityEvent;
-import org.thoughtcrime.securesms.crypto.storage.TextSecureSessionStore;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.EncryptingSmsDatabase;
 import org.thoughtcrime.securesms.database.NoSuchMessageException;
@@ -17,7 +15,6 @@ import org.thoughtcrime.securesms.jobs.requirements.MasterSecretRequirement;
 import org.thoughtcrime.securesms.notifications.MessageNotifier;
 import org.thoughtcrime.securesms.service.SmsDeliveryListener;
 import org.whispersystems.jobqueue.JobParameters;
-import org.whispersystems.libaxolotl.state.SessionStore;
 
 public class SmsSentJob extends MasterSecretJob {
 
@@ -78,18 +75,18 @@ public class SmsSentJob extends MasterSecretJob {
 
       switch (result) {
         case Activity.RESULT_OK:
-          database.markAsSent(messageId);
+          database.markAsSent(messageId, false);
           break;
         case SmsManager.RESULT_ERROR_NO_SERVICE:
         case SmsManager.RESULT_ERROR_RADIO_OFF:
           Log.w(TAG, "Service connectivity problem, requeuing...");
           ApplicationContext.getInstance(context)
               .getJobManager()
-              .add(new SmsSendJob(context, messageId, record.getIndividualRecipient().getNumber()));
+              .add(new SmsSendJob(context, messageId, record.getIndividualRecipient().getAddress().serialize()));
           break;
         default:
           database.markAsSentFailed(messageId);
-          MessageNotifier.notifyMessageDeliveryFailed(context, record.getRecipients(), record.getThreadId());
+          MessageNotifier.notifyMessageDeliveryFailed(context, record.getRecipient(), record.getThreadId());
       }
     } catch (NoSuchMessageException e) {
       Log.w(TAG, e);

@@ -26,17 +26,17 @@ import com.nineoldandroids.animation.ObjectAnimator;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.components.InputAwareLayout.InputView;
 import org.thoughtcrime.securesms.components.KeyboardAwareLinearLayout;
-import org.thoughtcrime.securesms.components.camera.QuickCamera.QuickCameraListener;
+import org.thoughtcrime.securesms.components.camera.CameraView.CameraViewListener;
 import org.thoughtcrime.securesms.util.ServiceUtil;
 import org.thoughtcrime.securesms.util.Util;
 import org.thoughtcrime.securesms.util.ViewUtil;
 
-public class QuickAttachmentDrawer extends ViewGroup implements InputView {
+public class QuickAttachmentDrawer extends ViewGroup implements InputView, CameraViewListener {
   private static final String TAG = QuickAttachmentDrawer.class.getSimpleName();
 
   private final ViewDragHelper dragHelper;
 
-  private QuickCamera               quickCamera;
+  private CameraView                cameraView;
   private int                       coverViewPosition;
   private KeyboardAwareLinearLayout container;
   private View                      coverView;
@@ -74,12 +74,13 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
 
   private void initializeView() {
     inflate(getContext(), R.layout.quick_attachment_drawer, this);
-    quickCamera = (QuickCamera) findViewById(R.id.quick_camera);
+    cameraView = ViewUtil.findById(this, R.id.quick_camera);
     updateControlsView();
 
     coverViewPosition = getChildCount();
     controls.setVisibility(GONE);
-    quickCamera.setVisibility(GONE);
+    cameraView.setVisibility(GONE);
+    cameraView.addListener(this);
   }
 
   public static boolean isDeviceSupported(Context context) {
@@ -108,7 +109,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     this.rotation = rotation;
     if (rotationChanged) {
       if (isShowing()) {
-        quickCamera.onPause();
+        cameraView.onPause();
       }
       updateControlsView();
       setDrawerStateAndUpdate(drawerState, true);
@@ -123,13 +124,15 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     shutterButton    = (ImageButton) controls.findViewById(R.id.shutter_button);
     swapCameraButton = (ImageButton) controls.findViewById(R.id.swap_camera_button);
     fullScreenButton = (ImageButton) controls.findViewById(R.id.fullscreen_button);
-    if (quickCamera.isMultipleCameras()) {
+    if (cameraView.isMultiCamera()) {
       swapCameraButton.setVisibility(View.VISIBLE);
+      swapCameraButton.setImageResource(cameraView.isRearCamera() ? R.drawable.quick_camera_front
+                                                                  : R.drawable.quick_camera_rear);
       swapCameraButton.setOnClickListener(new CameraFlipClickListener());
     }
     shutterButton.setOnClickListener(new ShutterClickListener());
     fullScreenButton.setOnClickListener(new FullscreenClickListener());
-    ViewUtil.swapChildInPlace(this, this.controls, controls, indexOfChild(quickCamera) + 1);
+    ViewUtil.swapChildInPlace(this, this.controls, controls, indexOfChild(cameraView) + 1);
     this.controls = controls;
   }
 
@@ -170,11 +173,11 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
       int childLeft = paddingLeft;
       int childBottom;
 
-      if (child == quickCamera) {
+      if (child == cameraView) {
         childTop    = computeCameraTopPosition(slideOffset);
         childBottom = childTop + childHeight;
-        if (quickCamera.getMeasuredWidth() < getMeasuredWidth())
-          childLeft = (getMeasuredWidth() - quickCamera.getMeasuredWidth()) / 2 + paddingLeft;
+        if (cameraView.getMeasuredWidth() < getMeasuredWidth())
+          childLeft = (getMeasuredWidth() - cameraView.getMeasuredWidth()) / 2 + paddingLeft;
       } else if (child == controls) {
         childBottom = getMeasuredHeight();
       } else {
@@ -271,14 +274,14 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
       ViewCompat.postInvalidateOnAnimation(this);
     }
 
-    if (slideOffset == 0 && quickCamera.isStarted()) {
-      quickCamera.onPause();
+    if (slideOffset == 0 && cameraView.isStarted()) {
+      cameraView.onPause();
       controls.setVisibility(GONE);
-      quickCamera.setVisibility(GONE);
-    } else if (slideOffset != 0 && !quickCamera.isStarted() & !paused) {
+      cameraView.setVisibility(GONE);
+    } else if (slideOffset != 0 && !cameraView.isStarted() & !paused) {
       controls.setVisibility(VISIBLE);
-      quickCamera.setVisibility(VISIBLE);
-      quickCamera.onResume();
+      cameraView.setVisibility(VISIBLE);
+      cameraView.onResume();
     }
   }
 
@@ -335,10 +338,31 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
 
   public void setListener(AttachmentDrawerListener listener) {
     this.listener = listener;
-    if (quickCamera != null) quickCamera.setQuickCameraListener(listener);
+    cameraView.addListener(listener);
   }
 
-  public interface AttachmentDrawerListener extends QuickCameraListener {
+  @Override
+  public void onImageCapture(@NonNull byte[] imageBytes) {}
+
+  @Override
+  public void onCameraFail() {
+    swapCameraButton.setEnabled(false);
+    shutterButton.setEnabled(false);
+  }
+
+  @Override
+  public void onCameraStart() {
+    swapCameraButton.setEnabled(true);
+    shutterButton.setEnabled(true);
+  }
+
+  @Override
+  public void onCameraStop() {
+    swapCameraButton.setEnabled(false);
+    shutterButton.setEnabled(false);
+  }
+
+  public interface AttachmentDrawerListener extends CameraViewListener {
     void onAttachmentDrawerStateChanged(DrawerState drawerState);
   }
 
@@ -391,8 +415,8 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
         int slideOffset = getTargetSlideOffset();
         dragHelper.captureChildView(coverView, 0);
         dragHelper.settleCapturedViewAt(coverView.getLeft(), computeCoverTopPosition(slideOffset));
-        dragHelper.captureChildView(quickCamera, 0);
-        dragHelper.settleCapturedViewAt(quickCamera.getLeft(), computeCameraTopPosition(slideOffset));
+        dragHelper.captureChildView(cameraView, 0);
+        dragHelper.settleCapturedViewAt(cameraView.getLeft(), computeCameraTopPosition(slideOffset));
         ViewCompat.postInvalidateOnAnimation(QuickAttachmentDrawer.this);
       }
     }
@@ -455,13 +479,13 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
   @SuppressWarnings("ResourceType")
   private boolean isDragViewUnder(int x, int y) {
     int[] viewLocation = new int[2];
-    quickCamera.getLocationOnScreen(viewLocation);
+    cameraView.getLocationOnScreen(viewLocation);
     int[] parentLocation = new int[2];
     this.getLocationOnScreen(parentLocation);
     int screenX = parentLocation[0] + x;
     int screenY = parentLocation[1] + y;
-    return screenX >= viewLocation[0] && screenX < viewLocation[0] + quickCamera.getWidth() &&
-           screenY >= viewLocation[1] && screenY < viewLocation[1] + quickCamera.getHeight();
+    return screenX >= viewLocation[0] && screenX < viewLocation[0] + cameraView.getWidth() &&
+           screenY >= viewLocation[1] && screenY < viewLocation[1] + cameraView.getHeight();
   }
 
   private int computeCameraTopPosition(int slideOffset) {
@@ -469,7 +493,7 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
       return getPaddingTop();
     }
 
-    final int   baseCameraTop = (quickCamera.getMeasuredHeight() - halfExpandedHeight) / 2;
+    final int   baseCameraTop = (cameraView.getMeasuredHeight() - halfExpandedHeight) / 2;
     final int   baseOffset    = getMeasuredHeight() - slideOffset - baseCameraTop;
     final float slop          = Util.clamp((float)(slideOffset - halfExpandedHeight) / (getMeasuredHeight() - halfExpandedHeight),
                                            0f,
@@ -502,12 +526,12 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
 
   public void onPause() {
     paused = true;
-    quickCamera.onPause();
+    cameraView.onPause();
   }
 
   public void onResume() {
     paused = false;
-    if (drawerState.isVisible()) quickCamera.onResume();
+    if (drawerState.isVisible()) cameraView.onResume();
   }
 
   public enum DrawerState {
@@ -522,18 +546,18 @@ public class QuickAttachmentDrawer extends ViewGroup implements InputView {
     @Override
     public void onClick(View v) {
       boolean crop        = drawerState != DrawerState.FULL_EXPANDED;
-      int     imageHeight = crop ? getContainer().getKeyboardHeight() : quickCamera.getMeasuredHeight();
-      Rect    previewRect = new Rect(0, 0, quickCamera.getMeasuredWidth(), imageHeight);
-      quickCamera.takePicture(previewRect);
+      int     imageHeight = crop ? getContainer().getKeyboardHeight() : cameraView.getMeasuredHeight();
+      Rect    previewRect = new Rect(0, 0, cameraView.getMeasuredWidth(), imageHeight);
+      cameraView.takePicture(previewRect);
     }
   }
 
   private class CameraFlipClickListener implements OnClickListener {
     @Override
     public void onClick(View v) {
-      quickCamera.swapCamera();
-      swapCameraButton.setImageResource(quickCamera.isRearCamera() ? R.drawable.quick_camera_front
-                                                                   : R.drawable.quick_camera_rear);
+      cameraView.flipCamera();
+      swapCameraButton.setImageResource(cameraView.isRearCamera() ? R.drawable.quick_camera_front
+                                                                  : R.drawable.quick_camera_rear);
     }
   }
 

@@ -26,19 +26,18 @@ import android.support.annotation.Nullable;
 import android.telephony.SmsManager;
 import android.util.Log;
 
+import com.google.android.mms.pdu_alt.PduParser;
+import com.google.android.mms.pdu_alt.RetrieveConf;
+
 import org.thoughtcrime.securesms.providers.MmsBodyProvider;
-import org.thoughtcrime.securesms.util.Hex;
 import org.thoughtcrime.securesms.util.Util;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 
-import ws.com.google.android.mms.MmsException;
-import ws.com.google.android.mms.pdu.PduParser;
-import ws.com.google.android.mms.pdu.RetrieveConf;
-
 public class IncomingLollipopMmsConnection extends LollipopMmsConnection implements IncomingMmsConnection {
+
   public  static final String ACTION = IncomingLollipopMmsConnection.class.getCanonicalName() + "MMS_DOWNLOADED_ACTION";
   private static final String TAG    = IncomingLollipopMmsConnection.class.getSimpleName();
 
@@ -58,7 +57,8 @@ public class IncomingLollipopMmsConnection extends LollipopMmsConnection impleme
   @Override
   @TargetApi(VERSION_CODES.LOLLIPOP)
   public synchronized @Nullable RetrieveConf retrieve(@NonNull String contentLocation,
-                                                      byte[] transactionId) throws MmsException
+                                                      byte[] transactionId,
+                                                      int subscriptionId) throws MmsException
   {
     beginTransaction();
 
@@ -66,11 +66,20 @@ public class IncomingLollipopMmsConnection extends LollipopMmsConnection impleme
       MmsBodyProvider.Pointer pointer = MmsBodyProvider.makeTemporaryPointer(getContext());
 
       Log.w(TAG, "downloading multimedia from " + contentLocation + " to " + pointer.getUri());
-      SmsManager.getDefault().downloadMultimediaMessage(getContext(),
-                                                        contentLocation,
-                                                        pointer.getUri(),
-                                                        null,
-                                                        getPendingIntent());
+
+      SmsManager smsManager;
+
+      if (VERSION.SDK_INT >= 22 && subscriptionId != -1) {
+        smsManager = SmsManager.getSmsManagerForSubscriptionId(subscriptionId);
+      } else {
+        smsManager = SmsManager.getDefault();
+      }
+
+      smsManager.downloadMultimediaMessage(getContext(),
+                                           contentLocation,
+                                           pointer.getUri(),
+                                           null,
+                                           getPendingIntent());
 
       waitForResult();
 
@@ -78,7 +87,7 @@ public class IncomingLollipopMmsConnection extends LollipopMmsConnection impleme
       Util.copy(pointer.getInputStream(), baos);
       pointer.close();
 
-      Log.w(TAG, baos.size() + "-byte response: " + Hex.dump(baos.toByteArray()));
+      Log.w(TAG, baos.size() + "-byte response: ");// + Hex.dump(baos.toByteArray()));
 
       return (RetrieveConf) new PduParser(baos.toByteArray()).parse();
     } catch (IOException | TimeoutException e) {

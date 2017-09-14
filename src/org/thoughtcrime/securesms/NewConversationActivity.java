@@ -19,13 +19,16 @@ package org.thoughtcrime.securesms;
 import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
 
 import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.ThreadDatabase;
-import org.thoughtcrime.securesms.recipients.RecipientFactory;
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.recipients.Recipient;
 
 /**
  * Activity container for starting a new conversation.
@@ -41,29 +44,24 @@ public class NewConversationActivity extends ContactSelectionActivity {
   public void onCreate(Bundle bundle, @NonNull MasterSecret masterSecret) {
     super.onCreate(bundle, masterSecret);
 
-    getToolbar().setShowCustomNavigationButton(false);
     getSupportActionBar().setDisplayHomeAsUpEnabled(true);
   }
 
   @Override
   public void onContactSelected(String number) {
-    Recipients recipients = RecipientFactory.getRecipientsFromString(this, number, true);
+    Recipient recipient = Recipient.from(this, Address.fromExternal(this, number), true);
 
-    if (recipients != null) {
-      Intent intent = new Intent(this, ConversationActivity.class);
-      intent.putExtra(ConversationActivity.RECIPIENTS_EXTRA, recipients.getIds());
-      intent.putExtra(ConversationActivity.DRAFT_TEXT_EXTRA, getIntent().getStringExtra(ConversationActivity.DRAFT_TEXT_EXTRA));
-      intent.putExtra(ConversationActivity.DRAFT_AUDIO_EXTRA, getIntent().getParcelableExtra(ConversationActivity.DRAFT_AUDIO_EXTRA));
-      intent.putExtra(ConversationActivity.DRAFT_VIDEO_EXTRA, getIntent().getParcelableExtra(ConversationActivity.DRAFT_VIDEO_EXTRA));
-      intent.putExtra(ConversationActivity.DRAFT_IMAGE_EXTRA, getIntent().getParcelableExtra(ConversationActivity.DRAFT_IMAGE_EXTRA));
+    Intent intent = new Intent(this, ConversationActivity.class);
+    intent.putExtra(ConversationActivity.ADDRESS_EXTRA, recipient.getAddress());
+    intent.putExtra(ConversationActivity.TEXT_EXTRA, getIntent().getStringExtra(ConversationActivity.TEXT_EXTRA));
+    intent.setDataAndType(getIntent().getData(), getIntent().getType());
 
-      long existingThread = DatabaseFactory.getThreadDatabase(this).getThreadIdIfExistsFor(recipients);
+    long existingThread = DatabaseFactory.getThreadDatabase(this).getThreadIdIfExistsFor(recipient);
 
-      intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, existingThread);
-      intent.putExtra(ConversationActivity.DISTRIBUTION_TYPE_EXTRA, ThreadDatabase.DistributionTypes.DEFAULT);
-      startActivity(intent);
-      finish();
-    }
+    intent.putExtra(ConversationActivity.THREAD_ID_EXTRA, existingThread);
+    intent.putExtra(ConversationActivity.DISTRIBUTION_TYPE_EXTRA, ThreadDatabase.DistributionTypes.DEFAULT);
+    startActivity(intent);
+    finish();
   }
 
   @Override
@@ -71,10 +69,34 @@ public class NewConversationActivity extends ContactSelectionActivity {
     super.onOptionsItemSelected(item);
 
     switch (item.getItemId()) {
-      case android.R.id.home: super.onBackPressed(); return true;
+    case android.R.id.home:   super.onBackPressed(); return true;
+    case R.id.menu_refresh:   handleManualRefresh(); return true;
+    case R.id.menu_new_group: handleCreateGroup();   return true;
+    case R.id.menu_invite:    handleInvite();        return true;
     }
 
     return false;
   }
 
+  private void handleManualRefresh() {
+    contactsFragment.setRefreshing(true);
+    onRefresh();
+  }
+
+  private void handleCreateGroup() {
+    startActivity(new Intent(this, GroupCreateActivity.class));
+  }
+
+  private void handleInvite() {
+    startActivity(new Intent(this, InviteActivity.class));
+  }
+
+  @Override
+  protected boolean onPrepareOptionsPanel(View view, Menu menu) {
+    MenuInflater inflater = this.getMenuInflater();
+    menu.clear();
+    inflater.inflate(R.menu.new_conversation_activity, menu);
+    super.onPrepareOptionsMenu(menu);
+    return true;
+  }
 }

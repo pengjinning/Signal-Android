@@ -27,14 +27,16 @@ import android.widget.Toast;
 import org.thoughtcrime.securesms.components.ContactFilterToolbar;
 import org.thoughtcrime.securesms.components.ContactFilterToolbar.OnFilterChangedListener;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
-import org.thoughtcrime.securesms.recipients.RecipientFactory;
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.database.RecipientDatabase.RecipientSettings;
+import org.thoughtcrime.securesms.recipients.Recipient;
 import org.thoughtcrime.securesms.sms.MessageSender;
 import org.thoughtcrime.securesms.sms.OutgoingTextMessage;
-import org.thoughtcrime.securesms.util.ProgressDialogAsyncTask;
 import org.thoughtcrime.securesms.util.ViewUtil;
 import org.thoughtcrime.securesms.util.concurrent.ListenableFuture.Listener;
+import org.thoughtcrime.securesms.util.task.ProgressDialogAsyncTask;
+import org.whispersystems.libsignal.util.guava.Optional;
 
 import java.util.concurrent.ExecutionException;
 
@@ -57,7 +59,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
   protected void onCreate(Bundle savedInstanceState, @NonNull MasterSecret masterSecret) {
     this.masterSecret = masterSecret;
 
-    getIntent().putExtra(ContactSelectionListFragment.DISPLAY_MODE, ContactSelectionListFragment.DISPLAY_MODE_OTHER_ONLY);
+    getIntent().putExtra(ContactSelectionListFragment.DISPLAY_MODE, ContactSelectionListFragment.DISPLAY_MODE_SMS_ONLY);
     getIntent().putExtra(ContactSelectionListFragment.MULTI_SELECT, true);
     getIntent().putExtra(ContactSelectionListFragment.REFRESHABLE, false);
 
@@ -81,7 +83,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
     heart             = ViewUtil.findById(this, R.id.heart);
     contactsFragment  = (ContactSelectionListFragment)getSupportFragmentManager().findFragmentById(R.id.contact_selection_list_fragment);
 
-    inviteText.setText(getString(R.string.InviteActivity_lets_switch_to_signal, "http://sgnl.link/1KpeYmF"));
+    inviteText.setText(getString(R.string.InviteActivity_lets_switch_to_signal, "https://sgnl.link/1KpeYmF"));
     updateSmsButtonText();
 
     if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
@@ -93,6 +95,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
     smsCancelButton.setOnClickListener(new SmsCancelClickListener());
     smsSendButton.setOnClickListener(new SmsSendClickListener());
     contactFilter.setOnFilterChangedListener(new ContactFilterChangedListener());
+    contactFilter.setNavigationIcon(R.drawable.ic_search_white_24dp);
   }
 
   private Animation loadAnimation(@AnimRes int animResId) {
@@ -118,7 +121,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
   }
 
   private void updateSmsButtonText() {
-    smsSendButton.setText(getResources().getQuantityString(R.plurals.InviteActivity_send_to_friends,
+    smsSendButton.setText(getResources().getQuantityString(R.plurals.InviteActivity_send_sms_to_friends,
                                                            contactsFragment.getSelectedContacts().size(),
                                                            contactsFragment.getSelectedContacts().size()));
     smsSendButton.setEnabled(!contactsFragment.getSelectedContacts().isEmpty());
@@ -135,7 +138,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
   private void cancelSmsSelection() {
     contactsFragment.reset();
     updateSmsButtonText();
-    ViewUtil.animateOut(smsSendFrame, slideOutAnimation);
+    ViewUtil.animateOut(smsSendFrame, slideOutAnimation, View.GONE);
   }
 
   private class ShareClickListener implements OnClickListener {
@@ -227,14 +230,16 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
       if (context == null) return null;
 
       for (String number : numbers) {
-        final Recipients recipients = RecipientFactory.getRecipientsFromString(context, number, false);
-        if (recipients != null && recipients.getPrimaryRecipient() != null) {
-          MessageSender.send(context, masterSecret, new OutgoingTextMessage(recipients, message), -1L, true);
-          if (recipients.getPrimaryRecipient().getContactUri() != null) {
-            DatabaseFactory.getRecipientPreferenceDatabase(context).setSeenInviteReminder(recipients, true);
-          }
+        Recipient recipient      = Recipient.from(context, Address.fromExternal(context, number), false);
+        int       subscriptionId = recipient.getDefaultSubscriptionId().or(-1);
+
+        MessageSender.send(context, masterSecret, new OutgoingTextMessage(recipient, message, subscriptionId), -1L, true, null);
+
+        if (recipient.getContactUri() != null) {
+          DatabaseFactory.getRecipientDatabase(context).setSeenInviteReminder(recipient, true);
         }
       }
+
       return null;
     }
 
@@ -244,7 +249,7 @@ public class InviteActivity extends PassphraseRequiredActionBarActivity implemen
       final Context context = getContext();
       if (context == null) return;
 
-      ViewUtil.animateOut(smsSendFrame, slideOutAnimation).addListener(new Listener<Boolean>() {
+      ViewUtil.animateOut(smsSendFrame, slideOutAnimation, View.GONE).addListener(new Listener<Boolean>() {
         @Override
         public void onSuccess(Boolean result) {
           contactsFragment.reset();

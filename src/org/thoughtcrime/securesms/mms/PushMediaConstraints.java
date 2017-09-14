@@ -5,8 +5,9 @@ import android.content.Context;
 import org.thoughtcrime.securesms.util.Util;
 
 public class PushMediaConstraints extends MediaConstraints {
+
   private static final int MAX_IMAGE_DIMEN_LOWMEM = 768;
-  private static final int MAX_IMAGE_DIMEN        = 1280;
+  private static final int MAX_IMAGE_DIMEN        = 4096;
   private static final int KB                     = 1024;
   private static final int MB                     = 1024 * KB;
 
@@ -21,22 +22,27 @@ public class PushMediaConstraints extends MediaConstraints {
   }
 
   @Override
-  public int getImageMaxSize() {
-    return 420 * KB;
+  public int getImageMaxSize(Context context) {
+    return 6 * MB;
   }
 
   @Override
-  public int getGifMaxSize() {
-    return 5 * MB;
+  public int getGifMaxSize(Context context) {
+    return 25 * MB;
   }
 
   @Override
-  public int getVideoMaxSize() {
+  public int getVideoMaxSize(Context context) {
     return 100 * MB;
   }
 
   @Override
-  public int getAudioMaxSize() {
+  public int getAudioMaxSize(Context context) {
+    return 100 * MB;
+  }
+
+  @Override
+  public int getDocumentMaxSize(Context context) {
     return 100 * MB;
   }
 }

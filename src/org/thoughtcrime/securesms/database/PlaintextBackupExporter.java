@@ -2,38 +2,33 @@ package org.thoughtcrime.securesms.database;
 
 
 import android.content.Context;
-import android.os.Environment;
 
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.database.model.SmsMessageRecord;
+import org.thoughtcrime.securesms.util.StorageUtil;
 
 import java.io.File;
 import java.io.IOException;
 
 public class PlaintextBackupExporter {
 
+  private static final String FILENAME = "SignalPlaintextBackup.xml";
+
   public static void exportPlaintextToSd(Context context, MasterSecret masterSecret)
       throws NoExternalStorageException, IOException
   {
-    verifyExternalStorageForPlaintextExport();
     exportPlaintext(context, masterSecret);
   }
 
-  private static void verifyExternalStorageForPlaintextExport() throws NoExternalStorageException {
-    if (!Environment.getExternalStorageDirectory().canWrite())
-      throw new NoExternalStorageException();
-  }
-
-  private static String getPlaintextExportDirectoryPath() {
-    File sdDirectory = Environment.getExternalStorageDirectory();
-    return sdDirectory.getAbsolutePath() + File.separator + "TextSecurePlaintextBackup.xml";
+  public static File getPlaintextExportFile() throws NoExternalStorageException {
+    return new File(StorageUtil.getBackupDir(), FILENAME);
   }
 
   private static void exportPlaintext(Context context, MasterSecret masterSecret)
-      throws IOException
+      throws NoExternalStorageException, IOException
   {
     int count               = DatabaseFactory.getSmsDatabase(context).getMessageCount();
-    XmlBackup.Writer writer = new XmlBackup.Writer(getPlaintextExportDirectoryPath(), count);
+    XmlBackup.Writer writer = new XmlBackup.Writer(getPlaintextExportFile().getAbsolutePath(), count);
 
 
     SmsMessageRecord record;
@@ -49,7 +44,8 @@ public class PlaintextBackupExporter {
 
       while ((record = reader.getNext()) != null) {
         XmlBackup.XmlBackupItem item =
-            new XmlBackup.XmlBackupItem(0, record.getIndividualRecipient().getNumber(),
+            new XmlBackup.XmlBackupItem(0, record.getIndividualRecipient().getAddress().serialize(),
+                                        record.getIndividualRecipient().getName(),
                                         record.getDateReceived(),
                                         MmsSmsColumns.Types.translateToSystemBaseType(record.getType()),
                                         null, record.getDisplayBody().toString(), null,

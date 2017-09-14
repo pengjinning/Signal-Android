@@ -7,12 +7,12 @@ import android.util.Log;
 
 import org.thoughtcrime.securesms.crypto.MasterCipher;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
-import org.whispersystems.libaxolotl.InvalidKeyIdException;
-import org.whispersystems.libaxolotl.InvalidMessageException;
-import org.whispersystems.libaxolotl.state.SignedPreKeyRecord;
-import org.whispersystems.libaxolotl.state.SignedPreKeyStore;
-import org.whispersystems.libaxolotl.state.PreKeyRecord;
-import org.whispersystems.libaxolotl.state.PreKeyStore;
+import org.whispersystems.libsignal.InvalidKeyIdException;
+import org.whispersystems.libsignal.InvalidMessageException;
+import org.whispersystems.libsignal.state.SignedPreKeyRecord;
+import org.whispersystems.libsignal.state.SignedPreKeyStore;
+import org.whispersystems.libsignal.state.PreKeyRecord;
+import org.whispersystems.libsignal.state.PreKeyStore;
 import org.thoughtcrime.securesms.util.Conversions;
 
 import java.io.File;
@@ -79,9 +79,11 @@ public class TextSecurePreKeyStore implements PreKeyStore, SignedPreKeyStore {
 
       for (File signedPreKeyFile : directory.listFiles()) {
         try {
-          results.add(new SignedPreKeyRecord(loadSerializedRecord(signedPreKeyFile)));
+          if (!"index.dat".equals(signedPreKeyFile.getName())) {
+            results.add(new SignedPreKeyRecord(loadSerializedRecord(signedPreKeyFile)));
+          }
         } catch (IOException | InvalidMessageException e) {
-          Log.w(TAG, e);
+          Log.w(TAG, signedPreKeyFile.getAbsolutePath(), e);
         }
       }
 
@@ -182,7 +184,7 @@ public class TextSecurePreKeyStore implements PreKeyStore, SignedPreKeyStore {
       MasterCipher masterCipher = new MasterCipher(masterSecret);
       serializedRecord = masterCipher.decryptBytes(serializedRecord);
     } else if (recordVersion < PLAINTEXT_VERSION) {
-      throw new AssertionError("Migration didn't happen!");
+      throw new AssertionError("Migration didn't happen! " + recordFile.getAbsolutePath() + ", " + recordVersion);
     }
 
     fin.close();

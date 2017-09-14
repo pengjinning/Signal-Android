@@ -23,7 +23,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
-import android.os.Handler;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.NonNull;
 import android.util.AttributeSet;
@@ -31,14 +30,19 @@ import android.view.View;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import org.thoughtcrime.securesms.components.AlertView;
 import org.thoughtcrime.securesms.components.AvatarImageView;
+import org.thoughtcrime.securesms.components.DeliveryStatusView;
 import org.thoughtcrime.securesms.components.FromTextView;
 import org.thoughtcrime.securesms.components.ThumbnailView;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.database.model.ThreadRecord;
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.recipients.Recipient;
+import org.thoughtcrime.securesms.recipients.RecipientModifiedListener;
 import org.thoughtcrime.securesms.util.DateUtils;
 import org.thoughtcrime.securesms.util.ResUtil;
+import org.thoughtcrime.securesms.util.Util;
+import org.thoughtcrime.securesms.util.ViewUtil;
 
 import java.util.Locale;
 import java.util.Set;
@@ -53,19 +57,25 @@ import static org.thoughtcrime.securesms.util.SpanUtil.color;
  */
 
 public class ConversationListItem extends RelativeLayout
-                                  implements Recipients.RecipientsModifiedListener, Unbindable
+                                  implements RecipientModifiedListener,
+                                             BindableConversationListItem, Unbindable
 {
   private final static String TAG = ConversationListItem.class.getSimpleName();
 
   private final static Typeface BOLD_TYPEFACE  = Typeface.create("sans-serif", Typeface.BOLD);
   private final static Typeface LIGHT_TYPEFACE = Typeface.create("sans-serif-light", Typeface.NORMAL);
 
-  private Set<Long>       selectedThreads;
-  private Recipients      recipients;
-  private long            threadId;
-  private TextView        subjectView;
-  private FromTextView    fromView;
-  private TextView        dateView;
+  private Set<Long>          selectedThreads;
+  private Recipient          recipient;
+  private long               threadId;
+  private TextView           subjectView;
+  private FromTextView       fromView;
+  private TextView           dateView;
+  private TextView           archivedView;
+  private DeliveryStatusView deliveryStatusIndicator;
+  private AlertView          alertView;
+  private long               lastSeen;
+
   private boolean         read;
   private AvatarImageView contactPhotoImage;
   private ThumbnailView   thumbnailView;
@@ -73,7 +83,6 @@ public class ConversationListItem extends RelativeLayout
   private final @DrawableRes int readBackground;
   private final @DrawableRes int unreadBackround;
 
-  private final Handler handler = new Handler();
   private int distributionType;
 
   public ConversationListItem(Context context) {
@@ -89,25 +98,32 @@ public class ConversationListItem extends RelativeLayout
   @Override
   protected void onFinishInflate() {
     super.onFinishInflate();
-    this.subjectView       = (TextView)        findViewById(R.id.subject);
-    this.fromView          = (FromTextView)    findViewById(R.id.from);
-    this.dateView          = (TextView)        findViewById(R.id.date);
-    this.contactPhotoImage = (AvatarImageView) findViewById(R.id.contact_photo_image);
-    this.thumbnailView     = (ThumbnailView)   findViewById(R.id.thumbnail);
+    this.subjectView             = (TextView)           findViewById(R.id.subject);
+    this.fromView                = (FromTextView)       findViewById(R.id.from);
+    this.dateView                = (TextView)           findViewById(R.id.date);
+    this.deliveryStatusIndicator = (DeliveryStatusView) findViewById(R.id.delivery_status);
+    this.alertView               = (AlertView)          findViewById(R.id.indicators_parent);
+    this.contactPhotoImage       = (AvatarImageView)    findViewById(R.id.contact_photo_image);
+    this.thumbnailView           = (ThumbnailView)      findViewById(R.id.thumbnail);
+    this.archivedView            = ViewUtil.findById(this, R.id.archived);
     thumbnailView.setClickable(false);
+
+    ViewUtil.setTextViewGravityStart(this.fromView, getContext());
+    ViewUtil.setTextViewGravityStart(this.subjectView, getContext());
   }
 
-  public void set(@NonNull MasterSecret masterSecret, @NonNull ThreadRecord thread,
-                  @NonNull Locale locale, @NonNull Set<Long> selectedThreads, boolean batchMode)
+  public void bind(@NonNull MasterSecret masterSecret, @NonNull ThreadRecord thread,
+                   @NonNull Locale locale, @NonNull Set<Long> selectedThreads, boolean batchMode)
   {
     this.selectedThreads  = selectedThreads;
-    this.recipients       = thread.getRecipients();
+    this.recipient        = thread.getRecipient();
     this.threadId         = thread.getThreadId();
     this.read             = thread.isRead();
     this.distributionType = thread.getDistributionType();
+    this.lastSeen         = thread.getLastSeen();
 
-    this.recipients.addListener(this);
-    this.fromView.setText(recipients, read);
+    this.recipient.addListener(this);
+    this.fromView.setText(recipient, read);
 
     this.subjectView.setText(thread.getDisplayBody());
     this.subjectView.setTypeface(read ? LIGHT_TYPEFACE : BOLD_TYPEFACE);
@@ -118,32 +134,47 @@ public class ConversationListItem extends RelativeLayout
       dateView.setTypeface(read ? LIGHT_TYPEFACE : BOLD_TYPEFACE);
     }
 
+    if (thread.isArchived()) {
+      this.archivedView.setVisibility(View.VISIBLE);
+    } else {
+      this.archivedView.setVisibility(View.GONE);
+    }
+
+    setStatusIcons(thread);
     setThumbnailSnippet(masterSecret, thread);
     setBatchState(batchMode);
     setBackground(thread);
-    setRippleColor(recipients);
-    this.contactPhotoImage.setAvatar(recipients, true);
+    setRippleColor(recipient);
+    this.contactPhotoImage.setAvatar(recipient, true);
   }
 
   @Override
   public void unbind() {
-    if (this.recipients != null) this.recipients.removeListener(this);
+    if (this.recipient != null) this.recipient.removeListener(this);
   }
 
   private void setBatchState(boolean batch) {
     setSelected(batch && selectedThreads.contains(threadId));
   }
 
-  public Recipients getRecipients() {
-    return recipients;
+  public Recipient getRecipient() {
+    return recipient;
   }
 
   public long getThreadId() {
     return threadId;
   }
 
+  public boolean getRead() {
+    return read;
+  }
+
   public int getDistributionType() {
     return distributionType;
+  }
+
+  public long getLastSeen() {
+    return lastSeen;
   }
 
   private void setThumbnailSnippet(MasterSecret masterSecret, ThreadRecord thread) {
@@ -153,13 +184,39 @@ public class ConversationListItem extends RelativeLayout
 
       LayoutParams subjectParams = (RelativeLayout.LayoutParams)this.subjectView.getLayoutParams();
       subjectParams.addRule(RelativeLayout.LEFT_OF, R.id.thumbnail);
+      if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1) {
+        subjectParams.addRule(RelativeLayout.START_OF, R.id.thumbnail);
+      }
       this.subjectView.setLayoutParams(subjectParams);
+      this.post(new ThumbnailPositioner(thumbnailView, archivedView, deliveryStatusIndicator, dateView));
     } else {
       this.thumbnailView.setVisibility(View.GONE);
 
       LayoutParams subjectParams = (RelativeLayout.LayoutParams)this.subjectView.getLayoutParams();
-      subjectParams.addRule(RelativeLayout.LEFT_OF, 0);
+      subjectParams.addRule(RelativeLayout.LEFT_OF, R.id.delivery_status);
+      if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1) {
+        subjectParams.addRule(RelativeLayout.START_OF, R.id.delivery_status);
+      }
       this.subjectView.setLayoutParams(subjectParams);
+    }
+  }
+
+  private void setStatusIcons(ThreadRecord thread) {
+    if (!thread.isOutgoing() || thread.isOutgoingCall()) {
+      deliveryStatusIndicator.setNone();
+      alertView.setNone();
+    } else if (thread.isFailed()) {
+      deliveryStatusIndicator.setNone();
+      alertView.setFailed();
+    } else if (thread.isPendingInsecureSmsFallback()) {
+      deliveryStatusIndicator.setNone();
+      alertView.setPendingApproval();
+    } else {
+      alertView.setNone();
+
+      if      (thread.isPending())   deliveryStatusIndicator.setPending();
+      else if (thread.isDelivered()) deliveryStatusIndicator.setDelivered();
+      else                           deliveryStatusIndicator.setSent();
     }
   }
 
@@ -169,22 +226,56 @@ public class ConversationListItem extends RelativeLayout
   }
 
   @TargetApi(VERSION_CODES.LOLLIPOP)
-  private void setRippleColor(Recipients recipients) {
+  private void setRippleColor(Recipient recipient) {
     if (VERSION.SDK_INT >= VERSION_CODES.LOLLIPOP) {
       ((RippleDrawable)(getBackground()).mutate())
-          .setColor(ColorStateList.valueOf(recipients.getColor().toConversationColor(getContext())));
+          .setColor(ColorStateList.valueOf(recipient.getColor().toConversationColor(getContext())));
     }
   }
 
   @Override
-  public void onModified(final Recipients recipients) {
-    handler.post(new Runnable() {
-      @Override
-      public void run() {
-        fromView.setText(recipients, read);
-        contactPhotoImage.setAvatar(recipients, true);
-        setRippleColor(recipients);
-      }
+  public void onModified(final Recipient recipient) {
+    Util.runOnMain(() -> {
+      fromView.setText(recipient, read);
+      contactPhotoImage.setAvatar(recipient, true);
+      setRippleColor(recipient);
     });
   }
+
+  private static class ThumbnailPositioner implements Runnable {
+
+    private final View thumbnailView;
+    private final View archivedView;
+    private final View deliveryStatusView;
+    private final View dateView;
+
+    public ThumbnailPositioner(View thumbnailView, View archivedView, View deliveryStatusView, View dateView) {
+      this.thumbnailView      = thumbnailView;
+      this.archivedView       = archivedView;
+      this.deliveryStatusView = deliveryStatusView;
+      this.dateView           = dateView;
+    }
+
+    @Override
+    public void run() {
+      LayoutParams thumbnailParams = (RelativeLayout.LayoutParams)thumbnailView.getLayoutParams();
+
+      if (archivedView.getVisibility() == View.VISIBLE &&
+          (archivedView.getWidth() + deliveryStatusView.getWidth()) > dateView.getWidth())
+      {
+        thumbnailParams.addRule(RelativeLayout.LEFT_OF, R.id.delivery_status);
+        if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1) {
+          thumbnailParams.addRule(RelativeLayout.START_OF, R.id.delivery_status);
+        }
+      } else {
+        thumbnailParams.addRule(RelativeLayout.LEFT_OF, R.id.date);
+        if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1) {
+          thumbnailParams.addRule(RelativeLayout.START_OF, R.id.date);
+        }
+      }
+
+      thumbnailView.setLayoutParams(thumbnailParams);
+    }
+  }
+
 }

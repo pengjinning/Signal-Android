@@ -12,28 +12,25 @@ import android.util.Log;
 
 import com.google.android.gms.gcm.GoogleCloudMessaging;
 
-import org.thoughtcrime.redphone.signaling.RedPhoneAccountAttributes;
-import org.thoughtcrime.redphone.signaling.RedPhoneAccountManager;
-import org.thoughtcrime.redphone.signaling.RedPhoneTrustStore;
-import org.thoughtcrime.securesms.BuildConfig;
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.crypto.IdentityKeyUtil;
 import org.thoughtcrime.securesms.crypto.PreKeyUtil;
+import org.thoughtcrime.securesms.crypto.SessionUtil;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
+import org.thoughtcrime.securesms.database.IdentityDatabase;
 import org.thoughtcrime.securesms.jobs.GcmRefreshJob;
-import org.thoughtcrime.securesms.push.TextSecureCommunicationFactory;
-import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.RecipientFactory;
+import org.thoughtcrime.securesms.push.AccountManagerFactory;
 import org.thoughtcrime.securesms.util.DirectoryHelper;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
 import org.thoughtcrime.securesms.util.Util;
-import org.whispersystems.libaxolotl.IdentityKeyPair;
-import org.whispersystems.libaxolotl.state.PreKeyRecord;
-import org.whispersystems.libaxolotl.state.SignedPreKeyRecord;
-import org.whispersystems.libaxolotl.util.KeyHelper;
-import org.whispersystems.libaxolotl.util.guava.Optional;
-import org.whispersystems.textsecure.api.TextSecureAccountManager;
-import org.whispersystems.textsecure.api.push.exceptions.ExpectationFailedException;
+import org.whispersystems.libsignal.IdentityKeyPair;
+import org.whispersystems.libsignal.state.PreKeyRecord;
+import org.whispersystems.libsignal.state.SignedPreKeyRecord;
+import org.whispersystems.libsignal.util.KeyHelper;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.SignalServiceAccountManager;
+import org.whispersystems.signalservice.api.push.exceptions.ExpectationFailedException;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -71,7 +68,12 @@ public class RegistrationService extends Service {
   public static final String CHALLENGE_EVENT        = "org.thoughtcrime.securesms.CHALLENGE_EVENT";
   public static final String REGISTRATION_EVENT     = "org.thoughtcrime.securesms.REGISTRATION_EVENT";
 
-  public static final String CHALLENGE_EXTRA        = "CAAChallenge";
+  public static final String NUMBER_EXTRA        = "e164number";
+  public static final String MASTER_SECRET_EXTRA = "master_secret";
+  public static final String GCM_SUPPORTED_EXTRA = "gcm_supported";
+  public static final String PASSWORD_EXTRA      = "password";
+  public static final String SIGNALING_KEY_EXTRA = "signaling_key";
+  public static final String CHALLENGE_EXTRA     = "CAAChallenge";
 
   private static final long REGISTRATION_TIMEOUT_MILLIS = 120000;
 
@@ -149,21 +151,22 @@ public class RegistrationService extends Service {
 
   private void handleVoiceRequestedIntent(Intent intent) {
     setState(new RegistrationState(RegistrationState.STATE_VOICE_REQUESTED,
-                                   intent.getStringExtra("e164number"),
-                                   intent.getStringExtra("password")));
+                                   intent.getStringExtra(NUMBER_EXTRA),
+                                   intent.getStringExtra(PASSWORD_EXTRA)));
   }
 
   private void handleVoiceRegistrationIntent(Intent intent) {
     markAsVerifying(true);
 
-    String number       = intent.getStringExtra("e164number");
-    String password     = intent.getStringExtra("password");
-    String signalingKey = intent.getStringExtra("signaling_key");
+    String  number       = intent.getStringExtra(NUMBER_EXTRA);
+    String  password     = intent.getStringExtra(PASSWORD_EXTRA);
+    String  signalingKey = intent.getStringExtra(SIGNALING_KEY_EXTRA);
+    boolean supportsGcm  = intent.getBooleanExtra(GCM_SUPPORTED_EXTRA, true);
 
     try {
-      TextSecureAccountManager accountManager = TextSecureCommunicationFactory.createManager(this, number, password);
+      SignalServiceAccountManager accountManager = AccountManagerFactory.createManager(this, number, password);
 
-      handleCommonRegistration(accountManager, number, password, signalingKey);
+      handleCommonRegistration(accountManager, number, password, signalingKey, supportsGcm);
 
       markAsVerified(number, password, signalingKey);
 
@@ -183,13 +186,11 @@ public class RegistrationService extends Service {
   private void handleSmsRegistrationIntent(Intent intent) {
     markAsVerifying(true);
 
-    String number         = intent.getStringExtra("e164number");
-    int    registrationId = TextSecurePreferences.getLocalRegistrationId(this);
-
-    if (registrationId == 0) {
-      registrationId = KeyHelper.generateRegistrationId(false);
-      TextSecurePreferences.setLocalRegistrationId(this, registrationId);
-    }
+    String  number         = intent.getStringExtra(NUMBER_EXTRA);
+    boolean supportsGcm    = intent.getBooleanExtra(GCM_SUPPORTED_EXTRA, true);
+    int     registrationId = KeyHelper.generateRegistrationId(false);
+    TextSecurePreferences.setLocalRegistrationId(this, registrationId);
+    SessionUtil.archiveAllSessions(this);
 
     try {
       String password     = Util.getSecret(18);
@@ -198,14 +199,15 @@ public class RegistrationService extends Service {
       initializeChallengeListener();
 
       setState(new RegistrationState(RegistrationState.STATE_CONNECTING, number));
-      TextSecureAccountManager accountManager = TextSecureCommunicationFactory.createManager(this, number, password);
+      SignalServiceAccountManager accountManager = AccountManagerFactory.createManager(this, number, password);
       accountManager.requestSmsVerificationCode();
 
       setState(new RegistrationState(RegistrationState.STATE_VERIFYING, number));
       String challenge = waitForChallenge();
-      accountManager.verifyAccountWithCode(challenge, signalingKey, registrationId, true);
+      accountManager.verifyAccountWithCode(challenge, signalingKey, registrationId, !supportsGcm);
 
-      handleCommonRegistration(accountManager, number, password, signalingKey);
+      TextSecurePreferences.setLocalNumber(this, number);
+      handleCommonRegistration(accountManager, number, password, signalingKey, supportsGcm);
       markAsVerified(number, password, signalingKey);
 
       setState(new RegistrationState(RegistrationState.STATE_COMPLETE, number));
@@ -231,36 +233,35 @@ public class RegistrationService extends Service {
     }
   }
 
-  private void handleCommonRegistration(TextSecureAccountManager accountManager, String number, String password, String signalingKey)
+  private void handleCommonRegistration(SignalServiceAccountManager accountManager, String number, String password, String signalingKey, boolean supportsGcm)
       throws IOException
   {
     setState(new RegistrationState(RegistrationState.STATE_GENERATING_KEYS, number));
-    Recipient          self         = RecipientFactory.getRecipientsFromString(this, number, false).getPrimaryRecipient();
+    Address            self         = Address.fromSerialized(number);
     IdentityKeyPair    identityKey  = IdentityKeyUtil.getIdentityKeyPair(this);
     List<PreKeyRecord> records      = PreKeyUtil.generatePreKeys(this);
-    PreKeyRecord       lastResort   = PreKeyUtil.generateLastResortKey(this);
-    SignedPreKeyRecord signedPreKey = PreKeyUtil.generateSignedPreKey(this, identityKey);
-    accountManager.setPreKeys(identityKey.getPublicKey(),lastResort, signedPreKey, records);
+    SignedPreKeyRecord signedPreKey = PreKeyUtil.generateSignedPreKey(this, identityKey, true);
+    accountManager.setPreKeys(identityKey.getPublicKey(), signedPreKey, records);
 
     setState(new RegistrationState(RegistrationState.STATE_GCM_REGISTERING, number));
 
-    String gcmRegistrationId = GoogleCloudMessaging.getInstance(this).register(GcmRefreshJob.REGISTRATION_ID);
-    accountManager.setGcmId(Optional.of(gcmRegistrationId));
+    if (supportsGcm) {
+      String gcmRegistrationId = GoogleCloudMessaging.getInstance(this).register(GcmRefreshJob.REGISTRATION_ID);
+      accountManager.setGcmId(Optional.of(gcmRegistrationId));
 
-    TextSecurePreferences.setGcmRegistrationId(this, gcmRegistrationId);
+      TextSecurePreferences.setGcmRegistrationId(this, gcmRegistrationId);
+      TextSecurePreferences.setGcmDisabled(this, false);
+    } else {
+      TextSecurePreferences.setGcmDisabled(this, true);
+    }
+
     TextSecurePreferences.setWebsocketRegistered(this, true);
 
-    DatabaseFactory.getIdentityDatabase(this).saveIdentity(self.getRecipientId(), identityKey.getPublicKey());
-    DirectoryHelper.refreshDirectory(this, accountManager, number);
-
-    RedPhoneAccountManager redPhoneAccountManager = new RedPhoneAccountManager(BuildConfig.REDPHONE_MASTER_URL,
-                                                                               new RedPhoneTrustStore(this),
-                                                                               number, password);
-
-    String verificationToken = accountManager.getAccountVerificationToken();
-    redPhoneAccountManager.createAccount(verificationToken, new RedPhoneAccountAttributes(signalingKey, gcmRegistrationId));
+    DatabaseFactory.getIdentityDatabase(this).saveIdentity(self, identityKey.getPublicKey(), IdentityDatabase.VerifiedStatus.VERIFIED, true, System.currentTimeMillis(), true);
+    DirectoryHelper.refreshDirectory(this, accountManager);
 
     DirectoryRefreshListener.schedule(this);
+    RotateSignedPreKeyListener.schedule(this);
   }
 
   private synchronized String waitForChallenge() throws AccountVerificationTimeoutException {

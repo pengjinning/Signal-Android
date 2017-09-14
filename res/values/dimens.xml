@@ -25,6 +25,7 @@
     <dimen name="media_bubble_height">210dp</dimen>
     <dimen name="media_bubble_border_width">3dp</dimen>
     <dimen name="media_bubble_remove_button_size">24dp</dimen>
+    <dimen name="media_bubble_edit_button_size">24dp</dimen>
 
     <integer name="media_overview_cols">3</integer>
     <dimen name="message_details_table_row_pad">10dp</dimen>
@@ -37,6 +38,8 @@
 
     <dimen name="transfer_controls_expanded_width">150dp</dimen>
     <dimen name="transfer_controls_contracted_width">70dp</dimen>
+    <dimen name="conversation_list_fragment_archive_padding">16dp</dimen>
+    <dimen name="contact_selection_actions_tap_area">10dp</dimen>
 
     <!-- RedPhone -->
     <dimen name="incoming_widget_outer_radius">135dip</dimen>
@@ -61,4 +64,6 @@
     <dimen name="onboarding_watermark_size">140dp</dimen>
     <dimen name="onboarding_title_size">34sp</dimen>
     <dimen name="onboarding_subtitle_size">20sp</dimen>
+
+    <dimen name="scribble_stroke_size">3dp</dimen>
 </resources>

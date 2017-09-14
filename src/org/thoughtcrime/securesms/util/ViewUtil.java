@@ -16,7 +16,9 @@
  */
 package org.thoughtcrime.securesms.util;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
@@ -28,6 +30,8 @@ import android.support.v4.view.ViewCompat;
 import android.support.v4.view.animation.FastOutSlowInInterpolator;
 import android.text.TextUtils;
 import android.text.TextUtils.TruncateAt;
+import android.util.DisplayMetrics;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -39,6 +43,7 @@ import android.widget.TextView;
 
 import org.thoughtcrime.securesms.util.concurrent.ListenableFuture;
 import org.thoughtcrime.securesms.util.concurrent.SettableFuture;
+import org.thoughtcrime.securesms.util.views.Stub;
 
 public class ViewUtil {
   @SuppressWarnings("deprecation")
@@ -118,6 +123,10 @@ public class ViewUtil {
     return (T) parent.findViewById(resId);
   }
 
+  public static <T extends View> Stub<T> findStubById(@NonNull Activity parent, @IdRes int resId) {
+    return new Stub<T>((ViewStub)parent.findViewById(resId));
+  }
+
   private static Animation getAlphaAnimation(float from, float to, int duration) {
     final Animation anim = new AlphaAnimation(from, to);
     anim.setInterpolator(new FastOutSlowInInterpolator());
@@ -129,13 +138,17 @@ public class ViewUtil {
     animateIn(view, getAlphaAnimation(0f, 1f, duration));
   }
 
-  public static void fadeOut(final @NonNull View view, final int duration) {
-    animateOut(view, getAlphaAnimation(1f, 0f, duration));
+  public static ListenableFuture<Boolean> fadeOut(final @NonNull View view, final int duration) {
+    return fadeOut(view, duration, View.GONE);
   }
 
-  public static ListenableFuture<Boolean> animateOut(final @NonNull View view, final @NonNull Animation animation) {
+  public static ListenableFuture<Boolean> fadeOut(@NonNull View view, int duration, int visibility) {
+    return animateOut(view, getAlphaAnimation(1f, 0f, duration), visibility);
+  }
+
+  public static ListenableFuture<Boolean> animateOut(final @NonNull View view, final @NonNull Animation animation, final int visibility) {
     final SettableFuture future = new SettableFuture();
-    if (view.getVisibility() == View.GONE) {
+    if (view.getVisibility() == visibility) {
       future.set(true);
     } else {
       view.clearAnimation();
@@ -150,7 +163,7 @@ public class ViewUtil {
 
         @Override
         public void onAnimationEnd(Animation animation) {
-          view.setVisibility(View.GONE);
+          view.setVisibility(visibility);
           future.set(true);
         }
       });
@@ -175,5 +188,27 @@ public class ViewUtil {
                                            @LayoutRes int            layoutResId)
   {
     return (T)(inflater.inflate(layoutResId, parent, false));
+  }
+
+  @SuppressLint("RtlHardcoded")
+  public static void setTextViewGravityStart(final @NonNull TextView textView, @NonNull Context context) {
+    if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1) {
+      if (DynamicLanguage.getLayoutDirection(context) == View.LAYOUT_DIRECTION_RTL) {
+        textView.setGravity(Gravity.RIGHT);
+      } else {
+        textView.setGravity(Gravity.LEFT);
+      }
+    }
+  }
+
+  public static void mirrorIfRtl(View view, Context context) {
+    if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN_MR1 &&
+        DynamicLanguage.getLayoutDirection(context) == View.LAYOUT_DIRECTION_RTL) {
+      view.setScaleX(-1.0f);
+    }
+  }
+
+  public static int dpToPx(Context context, int dp) {
+    return (int)((dp * context.getResources().getDisplayMetrics().density) + 0.5);
   }
 }

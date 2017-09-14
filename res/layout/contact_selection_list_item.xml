@@ -3,14 +3,16 @@
 <org.thoughtcrime.securesms.contacts.ContactSelectionListItem
         xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:tools="http://schemas.android.com/tools"
-        xmlns:app="http://schemas.android.com/apk/res-auto"
         android:layout_width="match_parent"
-        android:layout_height="?android:attr/listPreferredItemHeight"
+        android:layout_height="60dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@drawable/conversation_list_item_background"
+        android:focusable="true"
+        android:background="@drawable/conversation_item_background"
         android:paddingLeft="48dp"
-        android:paddingRight="20dp">
+        android:paddingStart="48dp"
+        android:paddingRight="24dp"
+        android:paddingEnd="24dp">
 
     <org.thoughtcrime.securesms.components.AvatarImageView
             android:id="@+id/contact_photo_image"
@@ -18,14 +20,16 @@
             android:layout_height="40dp"
             android:foreground="@drawable/contact_photo_background"
             android:cropToPadding="true"
-            app:showBadge="true"
-            tools:src="@color/md_material_blue_600"
-            android:layout_marginRight="10dp"
+            tools:src="@color/blue_600"
             android:contentDescription="@string/SingleContactSelectionActivity_contact_photo" />
 
     <LinearLayout android:layout_width="0dp"
                   android:layout_height="wrap_content"
                   android:layout_weight="1"
+                  android:layout_marginLeft="16dp"
+                  android:layout_marginStart="16dp"
+                  android:paddingRight="16dp"
+                  android:paddingEnd="16dp"
                   android:orientation="vertical">
 
         <org.thoughtcrime.securesms.components.emoji.EmojiTextView
@@ -47,6 +51,7 @@
             <TextView android:id="@+id/number"
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
+                      android:textDirection="ltr"
                       android:singleLine="true"
                       android:ellipsize="marquee"
                       android:textAppearance="?android:attr/textAppearanceSmall"
@@ -58,6 +63,7 @@
                       android:layout_width="wrap_content"
                       android:layout_height="wrap_content"
                       android:paddingLeft="10dip"
+                      android:paddingStart="10dip"
                       android:ellipsize="end"
                       android:singleLine="true"
                       android:textAppearance="?android:attr/textAppearanceSmall"

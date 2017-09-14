@@ -18,6 +18,7 @@ package org.thoughtcrime.securesms;
 
 import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.res.Configuration;
 import android.database.Cursor;
 import android.os.Build.VERSION;
@@ -29,19 +30,27 @@ import android.support.v4.content.Loader;
 import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.TextView;
 
 import org.thoughtcrime.securesms.crypto.MasterSecret;
+import org.thoughtcrime.securesms.database.Address;
 import org.thoughtcrime.securesms.database.CursorRecyclerViewAdapter;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
+import org.thoughtcrime.securesms.database.MediaDatabase.MediaRecord;
 import org.thoughtcrime.securesms.recipients.Recipient;
-import org.thoughtcrime.securesms.recipients.Recipient.RecipientModifiedListener;
-import org.thoughtcrime.securesms.recipients.RecipientFactory;
+import org.thoughtcrime.securesms.recipients.RecipientModifiedListener;
 import org.thoughtcrime.securesms.util.AbstractCursorLoader;
 import org.thoughtcrime.securesms.util.DynamicLanguage;
+import org.thoughtcrime.securesms.util.SaveAttachmentTask;
+import org.thoughtcrime.securesms.util.task.ProgressDialogAsyncTask;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Activity for displaying media attachments in-app
@@ -49,7 +58,7 @@ import org.thoughtcrime.securesms.util.DynamicLanguage;
 public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity implements LoaderManager.LoaderCallbacks<Cursor> {
   private final static String TAG = MediaOverviewActivity.class.getSimpleName();
 
-  public static final String RECIPIENT_EXTRA = "recipient";
+  public static final String ADDRESS_EXTRA   = "address";
   public static final String THREAD_ID_EXTRA = "thread_id";
 
   private final DynamicLanguage dynamicLanguage = new DynamicLanguage();
@@ -105,8 +114,8 @@ public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity i
 
   private void initializeActionBar() {
     getSupportActionBar().setTitle(recipient == null
-                                   ? getString(R.string.AndroidManifest__media_overview)
-                                   : getString(R.string.AndroidManifest__media_overview_named, recipient.toShortString()));
+                                   ? getString(R.string.AndroidManifest__all_media)
+                                   : getString(R.string.AndroidManifest__all_media_named, recipient.toShortString()));
   }
 
   @Override
@@ -123,18 +132,74 @@ public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity i
     gridView.setLayoutManager(gridManager);
     gridView.setHasFixedSize(true);
 
-    final long recipientId = getIntent().getLongExtra(RECIPIENT_EXTRA, -1);
-    if (recipientId > -1) {
-      recipient = RecipientFactory.getRecipientForId(this, recipientId, true);
-      recipient.addListener(new RecipientModifiedListener() {
-        @Override
-        public void onModified(Recipient recipient) {
-          initializeActionBar();
-        }
-      });
+    Address address = getIntent().getParcelableExtra(ADDRESS_EXTRA);
+
+    if (address != null) {
+      recipient = Recipient.from(this, address, true);
+    } else if (threadId > -1) {
+      recipient = DatabaseFactory.getThreadDatabase(this).getRecipientForThreadId(threadId);
     } else {
       recipient = null;
     }
+
+    if (recipient != null) {
+      recipient.addListener(new RecipientModifiedListener() {
+        @Override
+        public void onModified(Recipient recipients) {
+          initializeActionBar();
+        }
+      });
+    }
+  }
+
+  private void saveToDisk() {
+    final Context c = this;
+
+    SaveAttachmentTask.showWarningDialog(this, new DialogInterface.OnClickListener() {
+      @Override
+      public void onClick(DialogInterface dialogInterface, int i) {
+        new ProgressDialogAsyncTask<Void, Void, List<SaveAttachmentTask.Attachment>>(c,
+                                                                                     R.string.ConversationFragment_collecting_attahments,
+                                                                                     R.string.please_wait) {
+          @Override
+          protected List<SaveAttachmentTask.Attachment> doInBackground(Void... params) {
+            Cursor cursor                                   = DatabaseFactory.getMediaDatabase(c).getMediaForThread(threadId);
+            List<SaveAttachmentTask.Attachment> attachments = new ArrayList<>(cursor.getCount());
+
+            while (cursor != null && cursor.moveToNext()) {
+              MediaRecord record = MediaRecord.from(c, masterSecret, cursor);
+              attachments.add(new SaveAttachmentTask.Attachment(record.getAttachment().getDataUri(),
+                                                                record.getContentType(),
+                                                                record.getDate(),
+                                                                null));
+            }
+
+            return attachments;
+          }
+
+          @Override
+          protected void onPostExecute(List<SaveAttachmentTask.Attachment> attachments) {
+            super.onPostExecute(attachments);
+
+            SaveAttachmentTask saveTask = new SaveAttachmentTask(c, masterSecret, gridView, attachments.size());
+            saveTask.execute(attachments.toArray(new SaveAttachmentTask.Attachment[attachments.size()]));
+          }
+        }.execute();
+      }
+    }, gridView.getAdapter().getItemCount());
+  }
+
+  @Override
+  public boolean onPrepareOptionsMenu(Menu menu) {
+    super.onPrepareOptionsMenu(menu);
+
+    menu.clear();
+    if (gridView.getAdapter() != null && gridView.getAdapter().getItemCount() > 0) {
+      MenuInflater inflater = this.getMenuInflater();
+      inflater.inflate(R.menu.media_overview, menu);
+    }
+
+    return true;
   }
 
   @Override
@@ -142,7 +207,8 @@ public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity i
     super.onOptionsItemSelected(item);
 
     switch (item.getItemId()) {
-    case android.R.id.home: finish(); return true;
+    case R.id.save:         saveToDisk(); return true;
+    case android.R.id.home: finish();     return true;
     }
 
     return false;
@@ -156,8 +222,9 @@ public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity i
   @Override
   public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor cursor) {
     Log.w(TAG, "onLoadFinished()");
-    gridView.setAdapter(new ImageMediaAdapter(this, masterSecret, cursor));
+    gridView.setAdapter(new MediaAdapter(this, masterSecret, cursor, threadId));
     noImages.setVisibility(gridView.getAdapter().getItemCount() > 0 ? View.GONE : View.VISIBLE);
+    invalidateOptionsMenu();
   }
 
   @Override
@@ -175,7 +242,7 @@ public class MediaOverviewActivity extends PassphraseRequiredActionBarActivity i
 
     @Override
     public Cursor getCursor() {
-      return DatabaseFactory.getImageDatabase(getContext()).getImagesForThread(threadId);
+      return DatabaseFactory.getMediaDatabase(getContext()).getMediaForThread(threadId);
     }
   }
 }

@@ -32,10 +32,10 @@ import org.thoughtcrime.securesms.crypto.IdentityKeyUtil;
 import org.thoughtcrime.securesms.crypto.MasterSecret;
 import org.thoughtcrime.securesms.crypto.storage.TextSecurePreKeyStore;
 import org.thoughtcrime.securesms.crypto.storage.TextSecureSessionStore;
+import org.thoughtcrime.securesms.database.AttachmentDatabase;
 import org.thoughtcrime.securesms.database.DatabaseFactory;
 import org.thoughtcrime.securesms.database.MmsDatabase;
 import org.thoughtcrime.securesms.database.MmsDatabase.Reader;
-import org.thoughtcrime.securesms.database.AttachmentDatabase;
 import org.thoughtcrime.securesms.database.PushDatabase;
 import org.thoughtcrime.securesms.database.model.MessageRecord;
 import org.thoughtcrime.securesms.jobs.AttachmentDownloadJob;
@@ -68,6 +68,8 @@ public class DatabaseUpgradeActivity extends BaseActivity {
   public static final int CONTACTS_ACCOUNT_VERSION             = 136;
   public static final int MEDIA_DOWNLOAD_CONTROLS_VERSION      = 151;
   public static final int REDPHONE_SUPPORT_VERSION             = 157;
+  public static final int NO_MORE_CANONICAL_DB_VERSION         = 276;
+  public static final int PROFILES                             = 289;
 
   private static final SortedSet<Integer> UPGRADE_VERSIONS = new TreeSet<Integer>() {{
     add(NO_MORE_KEY_EXCHANGE_PREFIX_VERSION);
@@ -81,6 +83,7 @@ public class DatabaseUpgradeActivity extends BaseActivity {
     add(MIGRATE_SESSION_PLAINTEXT);
     add(MEDIA_DOWNLOAD_CONTROLS_VERSION);
     add(REDPHONE_SUPPORT_VERSION);
+    add(NO_MORE_CANONICAL_DB_VERSION);
   }};
 
   private MasterSecret masterSecret;
@@ -231,13 +234,19 @@ public class DatabaseUpgradeActivity extends BaseActivity {
                           .add(new DirectoryRefreshJob(getApplicationContext()));
       }
 
+      if (params[0] < PROFILES) {
+        ApplicationContext.getInstance(getApplicationContext())
+                          .getJobManager()
+                          .add(new DirectoryRefreshJob(getApplicationContext()));
+      }
+
       return null;
     }
 
     private void schedulePendingIncomingParts(Context context) {
       final AttachmentDatabase       attachmentDb       = DatabaseFactory.getAttachmentDatabase(context);
       final MmsDatabase              mmsDb              = DatabaseFactory.getMmsDatabase(context);
-      final List<DatabaseAttachment> pendingAttachments = DatabaseFactory.getAttachmentDatabase(context).getPendingAttachments();
+      final List<DatabaseAttachment> pendingAttachments = DatabaseFactory.getAttachmentDatabase(context).getPendingAttachments(masterSecret);
 
       Log.w(TAG, pendingAttachments.size() + " pending parts.");
       for (DatabaseAttachment attachment : pendingAttachments) {
@@ -251,7 +260,7 @@ public class DatabaseUpgradeActivity extends BaseActivity {
           Log.w(TAG, "queuing new attachment download job for incoming push part " + attachment.getAttachmentId() + ".");
           ApplicationContext.getInstance(context)
                             .getJobManager()
-                            .add(new AttachmentDownloadJob(context, attachment.getMmsId(), attachment.getAttachmentId()));
+                            .add(new AttachmentDownloadJob(context, attachment.getMmsId(), attachment.getAttachmentId(), false));
         }
         reader.close();
       }
@@ -268,8 +277,7 @@ public class DatabaseUpgradeActivity extends BaseActivity {
           ApplicationContext.getInstance(getApplicationContext())
                             .getJobManager()
                             .add(new PushDecryptJob(getApplicationContext(),
-                                                    pushReader.getLong(pushReader.getColumnIndexOrThrow(PushDatabase.ID)),
-                                                    pushReader.getString(pushReader.getColumnIndexOrThrow(PushDatabase.SOURCE))));
+                                                    pushReader.getLong(pushReader.getColumnIndexOrThrow(PushDatabase.ID))));
         }
       } finally {
         if (pushReader != null)

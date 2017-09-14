@@ -1,22 +1,19 @@
 package org.thoughtcrime.securesms.mms;
 
-import android.content.Context;
-
 import org.thoughtcrime.securesms.attachments.Attachment;
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.recipients.Recipient;
 
 import java.util.List;
 
-import ws.com.google.android.mms.pdu.PduBody;
-
 public class OutgoingSecureMediaMessage extends OutgoingMediaMessage {
 
-  public OutgoingSecureMediaMessage(Recipients recipients, String body,
+  public OutgoingSecureMediaMessage(Recipient recipient, String body,
                                     List<Attachment> attachments,
                                     long sentTimeMillis,
-                                    int distributionType)
+                                    int distributionType,
+                                    long expiresIn)
   {
-    super(recipients, body, attachments, sentTimeMillis, distributionType);
+    super(recipient, body, attachments, sentTimeMillis, -1, expiresIn, distributionType);
   }
 
   public OutgoingSecureMediaMessage(OutgoingMediaMessage base) {

@@ -19,8 +19,9 @@ package org.thoughtcrime.securesms.database.model;
 import android.content.Context;
 import android.text.SpannableString;
 
+import org.thoughtcrime.securesms.database.MmsSmsColumns;
 import org.thoughtcrime.securesms.database.SmsDatabase;
-import org.thoughtcrime.securesms.recipients.Recipients;
+import org.thoughtcrime.securesms.recipients.Recipient;
 
 /**
  * The base class for all message record models.  Encapsulates basic data
@@ -35,32 +36,53 @@ public abstract class DisplayRecord {
   protected final Context context;
   protected final long type;
 
-  private final Recipients recipients;
+  private final Recipient  recipient;
   private final long       dateSent;
   private final long       dateReceived;
   private final long       threadId;
   private final Body       body;
+  private final int        deliveryStatus;
+  private final int        receiptCount;
 
-  public DisplayRecord(Context context, Body body, Recipients recipients, long dateSent,
-                       long dateReceived, long threadId, long type)
+  public DisplayRecord(Context context, Body body, Recipient recipient, long dateSent,
+                       long dateReceived, long threadId, int deliveryStatus, int receiptCount, long type)
   {
     this.context              = context.getApplicationContext();
     this.threadId             = threadId;
-    this.recipients           = recipients;
+    this.recipient            = recipient;
     this.dateSent             = dateSent;
     this.dateReceived         = dateReceived;
     this.type                 = type;
     this.body                 = body;
+    this.receiptCount         = receiptCount;
+    this.deliveryStatus       = deliveryStatus;
   }
 
   public Body getBody() {
     return body;
   }
 
+  public boolean isFailed() {
+    return
+        MmsSmsColumns.Types.isFailedMessageType(type)            ||
+        MmsSmsColumns.Types.isPendingSecureSmsFallbackType(type) ||
+        deliveryStatus >= SmsDatabase.Status.STATUS_FAILED;
+  }
+
+  public boolean isPending() {
+    return MmsSmsColumns.Types.isPendingMessageType(type) &&
+           !MmsSmsColumns.Types.isIdentityVerified(type)  &&
+           !MmsSmsColumns.Types.isIdentityDefault(type);
+  }
+
+  public boolean isOutgoing() {
+    return MmsSmsColumns.Types.isOutgoingMessageType(type);
+  }
+
   public abstract SpannableString getDisplayBody();
 
-  public Recipients getRecipients() {
-    return recipients;
+  public Recipient getRecipient() {
+    return recipient;
   }
 
   public long getDateSent() {
@@ -95,6 +117,10 @@ public abstract class DisplayRecord {
     return isGroupUpdate() || isGroupQuit();
   }
 
+  public boolean isExpirationTimerUpdate() {
+    return SmsDatabase.Types.isExpirationTimerUpdate(type);
+  }
+
   public boolean isCallLog() {
     return SmsDatabase.Types.isCallLog(type);
   }
@@ -113,6 +139,23 @@ public abstract class DisplayRecord {
 
   public boolean isMissedCall() {
     return SmsDatabase.Types.isMissedCall(type);
+  }
+
+  public int getDeliveryStatus() {
+    return deliveryStatus;
+  }
+
+  public int getReceiptCount() {
+    return receiptCount;
+  }
+
+  public boolean isDelivered() {
+    return (deliveryStatus >= SmsDatabase.Status.STATUS_COMPLETE &&
+            deliveryStatus < SmsDatabase.Status.STATUS_PENDING) || receiptCount > 0;
+  }
+
+  public boolean isPendingInsecureSmsFallback() {
+    return SmsDatabase.Types.isPendingInsecureSmsFallbackType(type);
   }
 
   public static class Body {

@@ -17,10 +17,12 @@
 package org.thoughtcrime.securesms.mms;
 
 import android.content.Context;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 
 import org.thoughtcrime.securesms.attachments.Attachment;
 import org.thoughtcrime.securesms.util.MediaUtil;
+import org.whispersystems.libsignal.util.guava.Optional;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -48,6 +50,22 @@ public class SlideDeck {
     slides.clear();
   }
 
+  @NonNull
+  public String getBody() {
+    String body = "";
+
+    for (Slide slide : slides) {
+      Optional<String> slideBody = slide.getBody();
+
+      if (slideBody.isPresent()) {
+        body = slideBody.get();
+      }
+    }
+
+    return body;
+  }
+
+  @NonNull
   public List<Attachment> asAttachments() {
     List<Attachment> attachments = new LinkedList<>();
 
@@ -68,7 +86,7 @@ public class SlideDeck {
 
   public boolean containsMediaSlide() {
     for (Slide slide : slides) {
-      if (slide.hasImage() || slide.hasVideo() || slide.hasAudio()) {
+      if (slide.hasImage() || slide.hasVideo() || slide.hasAudio() || slide.hasDocument()) {
         return true;
       }
     }
@@ -89,6 +107,16 @@ public class SlideDeck {
     for (Slide slide : slides) {
       if (slide.hasAudio()) {
         return (AudioSlide)slide;
+      }
+    }
+
+    return null;
+  }
+
+  public @Nullable DocumentSlide getDocumentSlide() {
+    for (Slide slide: slides) {
+      if (slide.hasDocument()) {
+        return (DocumentSlide)slide;
       }
     }
 
